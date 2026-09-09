@@ -1,0 +1,131 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  quality:
+    name: Quality checks
+    runs-on: ubuntu-22.04
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+
+      - name: Install Linux dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            libappindicator3-dev \
+            librsvg2-dev \
+            patchelf \
+            xdg-utils
+
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: ./src-tauri -> target
+
+      - name: Install frontend dependencies
+        run: npm ci
+
+      - name: Check frontend
+        run: npm run check
+
+      - name: Check Rust formatting
+        run: cargo fmt --manifest-path src-tauri/Cargo.toml --check
+
+      - name: Test native shell
+        run: cargo test --manifest-path src-tauri/Cargo.toml --locked
+
+  desktop-builds:
+    name: Build ${{ matrix.name }}
+    needs: quality
+    runs-on: ${{ matrix.platform }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: Linux x86_64
+            platform: ubuntu-22.04
+            target: ''
+            args: --ci --bundles appimage,deb
+          - name: Windows x86_64
+            platform: windows-latest
+            target: ''
+            args: --ci --bundles nsis,msi
+          - name: macOS Apple Silicon
+            platform: macos-latest
+            target: aarch64-apple-darwin
+            args: --ci --target aarch64-apple-darwin --bundles dmg
+          - name: macOS Intel
+            platform: macos-latest
+            target: x86_64-apple-darwin
+            args: --ci --target x86_64-apple-darwin --bundles dmg
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Install Linux dependencies
+        if: startsWith(matrix.platform, 'ubuntu-')
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            libappindicator3-dev \
+            librsvg2-dev \
+            patchelf \
+            xdg-utils
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: ./src-tauri -> target
+          key: ${{ matrix.name }}
+
+      - name: Install frontend dependencies
+        run: npm ci
+
+      - name: Build installers
+        uses: tauri-apps/tauri-action@v1
+        env:
+          APPLE_SIGNING_IDENTITY: ${{ startsWith(matrix.platform, 'macos-') && '-' || '' }}
+        with:
+          args: ${{ matrix.args }}
+          uploadWorkflowArtifacts: true
+          workflowArtifactNamePattern: leanlander-[platform]-[arch]-[bundle]

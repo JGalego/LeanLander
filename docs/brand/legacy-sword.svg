@@ -1,0 +1,42 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-labelledby="title description">
+  <title id="title">LeanLander</title>
+  <desc id="description">A lone steel sword cleaving an abstract proof sequent.</desc>
+  <defs>
+    <linearGradient id="field" x1="84" y1="58" x2="425" y2="462" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#202631"/>
+      <stop offset="1" stop-color="#0c0f15"/>
+    </linearGradient>
+    <linearGradient id="steel" x1="230" y1="0" x2="282" y2="0" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#5f6b78"/>
+      <stop offset="0.43" stop-color="#eef3f6"/>
+      <stop offset="0.62" stop-color="#aab5c0"/>
+      <stop offset="1" stop-color="#4b5562"/>
+    </linearGradient>
+    <linearGradient id="guard" x1="164" y1="0" x2="348" y2="0" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#596471"/>
+      <stop offset="0.5" stop-color="#dce4e9"/>
+      <stop offset="1" stop-color="#596471"/>
+    </linearGradient>
+  </defs>
+
+  <rect x="24" y="24" width="464" height="464" rx="104" fill="url(#field)"/>
+  <rect x="34" y="34" width="444" height="444" rx="94" fill="none" stroke="#303845" stroke-width="4"/>
+
+  <g fill="none" stroke="#737e8c" stroke-linecap="round">
+    <path d="M112 218h91M136 258h67" stroke-width="13"/>
+    <path d="M309 218h91M309 258h67" stroke-width="13"/>
+    <path d="M111 304v70" stroke-width="11"/>
+    <path d="M111 324h107M294 324h107" stroke="#c4cdd5" stroke-width="12"/>
+    <path d="M309 370h91" stroke-width="13"/>
+  </g>
+
+  <path d="m217 324 22-17M295 324l-22 17" fill="none" stroke="#43b9ea" stroke-width="7" stroke-linecap="round"/>
+
+  <path d="M240 194h32l-5 171-11 68-11-68-5-171Z" fill="url(#steel)" stroke="#080a0e" stroke-width="6" stroke-linejoin="round"/>
+  <path d="M256 210v190" fill="none" stroke="#ffffff" stroke-opacity="0.38" stroke-width="3" stroke-linecap="round"/>
+  <path d="m165 178 65-7 12 12h28l12-12 65 7-15 22H180l-15-22Z" fill="url(#guard)" stroke="#080a0e" stroke-width="6" stroke-linejoin="round"/>
+  <rect x="242" y="92" width="28" height="88" rx="7" fill="#3e4753" stroke="#080a0e" stroke-width="6"/>
+  <path d="m244 111 24 13M244 135l24 13M244 159l22 12" fill="none" stroke="#8995a2" stroke-width="5"/>
+  <path d="m256 61 22 22-22 22-22-22 22-22Z" fill="url(#steel)" stroke="#080a0e" stroke-width="6" stroke-linejoin="round"/>
+  <path d="m256 72 11 11-11 11-11-11 11-11Z" fill="#43b9ea"/>
+</svg>
