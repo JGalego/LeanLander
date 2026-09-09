@@ -204,6 +204,43 @@
   padding-left: 48px;
 }
 
+.recent-projects {
+  padding-bottom: 10px;
+  border-top: 1px solid var(--line);
+}
+
+.recent-row {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  min-height: 30px;
+  gap: 7px;
+  padding: 0 13px;
+  overflow: hidden;
+  color: #536058;
+  font-size: 11px;
+  text-align: left;
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+}
+
+.recent-row:hover:not(:disabled) {
+  color: var(--ink);
+  background: #e8ebe4;
+}
+
+.recent-row:disabled {
+  color: var(--faint);
+  cursor: default;
+}
+
+.recent-row span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .environment-summary {
   margin-top: auto;
   padding-bottom: 10px;

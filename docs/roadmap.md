@@ -14,12 +14,12 @@
 
 ## Milestone 2: Project Discovery
 
-- [ ] Read project directories through narrowly scoped Tauri commands
-- [ ] Detect `lean-toolchain`, `lakefile.toml`, and `lakefile.lean`
-- [ ] Discover Lean source roots without full-project rescans
-- [ ] Load and save real files safely
-- [ ] Remember recent projects in the application data directory
-- [ ] Add Rust tests for spaces, Unicode, symlinks, and malformed configuration
+- [x] Read project directories through narrowly scoped Tauri commands
+- [x] Detect `lean-toolchain`, `lakefile.toml`, and `lakefile.lean`
+- [x] Discover Lean source roots without full-project rescans
+- [x] Load and save real files safely
+- [x] Remember recent projects in the application data directory
+- [x] Add Rust tests for spaces, Unicode, symlinks, and malformed configuration
 
 ## Milestone 3: Elan
 

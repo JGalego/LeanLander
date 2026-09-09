@@ -7,7 +7,7 @@
 <p align="center"><strong>There can be only one... Lean IDE.</strong></p>
 
 <p align="center">
-  <img alt="Status: Milestone 1" src="https://img.shields.io/badge/status-milestone%201-68717d">
+  <img alt="Status: Milestone 2" src="https://img.shields.io/badge/status-milestone%202-68717d">
   <img alt="Tauri 2" src="https://img.shields.io/badge/Tauri-2-24c8db?logo=tauri&logoColor=white">
   <img alt="React 19" src="https://img.shields.io/badge/React-19-087ea4?logo=react&logoColor=white">
   <a href="https://github.com/JGalego/LeanLander/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/JGalego/LeanLander/actions/workflows/ci.yml/badge.svg"></a>
@@ -16,7 +16,7 @@
 
 LeanLander is a focused, cross-platform desktop IDE for Lean 4. It aims to make opening a project and proving feel immediate, without asking users to become experts in Elan, Lake, or editor configuration first.
 
-The project is currently at **Milestone 1**: a runnable Tauri shell, a React workspace, an offline Monaco editor with Lean syntax highlighting, file tabs, a native folder chooser, and a cursor-driven sample proof-state panel. The files and proof state are fixtures for now; selecting a folder does not execute or modify project code.
+The project is currently at **Milestone 2**: a runnable Tauri shell, a React workspace, an offline Monaco editor with Lean syntax highlighting, native project discovery, safe source loading and saving, and recent projects. Proof states remain cursor-driven fixtures until the Lean language server milestone.
 
 ## Getting Started
 

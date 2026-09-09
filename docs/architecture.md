@@ -19,11 +19,13 @@ No UI component should construct a shell command. Native operations accept struc
 
 ## Current Boundary
 
-Milestone 1 has one native operation: choosing a project directory. `ProjectGateway` isolates the React application from `@tauri-apps/plugin-dialog`. Browser mode returns no selection and keeps the deterministic sample workspace active.
+Milestone 2 adds narrowly scoped Rust commands for project discovery, source loading and saving, and recent-project history. `ProjectGateway` still isolates the native folder dialog, while `ProjectClient` owns structured `invoke` calls. Browser mode keeps the deterministic sample workspace active.
 
-The Tauri capability grants `dialog:allow-open` only. There is no shell plugin, broad filesystem scope, or process capability exposed to the webview. Monaco and both fonts are packaged locally, so the editor does not fetch runtime assets from a CDN.
+Project discovery performs one bounded scan, ignores generated and dependency directories, and never follows symlinks. Later reads and writes accept only existing relative `.lean` paths whose canonical targets remain inside the selected project. Recent paths are stored in Tauri's application data directory.
 
-The proof panel currently consumes fixture data selected by cursor line. This proves the editor-to-infoview interaction shape without pretending a Lean server is connected.
+The Tauri capability grants `dialog:allow-open` only. Filesystem access remains behind validated Rust commands; there is no shell plugin, broad filesystem scope, or process capability exposed to the webview. Monaco and both fonts are packaged locally, so the editor does not fetch runtime assets from a CDN.
+
+The proof panel still consumes fixture data selected by cursor line. This proves the editor-to-infoview interaction shape without pretending a Lean server is connected.
 
 ## Planned Native Services
 

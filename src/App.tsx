@@ -1,10 +1,11 @@
-import { lazy, startTransition, Suspense, useState } from 'react'
+import { lazy, startTransition, Suspense, useEffect, useState } from 'react'
 import {
   Circle,
   FileCode2,
   FolderOpen,
   Hammer,
   LoaderCircle,
+  Save,
 } from 'lucide-react'
 import { ProjectSidebar } from './components/ProjectSidebar'
 import { ProofPanel } from './components/ProofPanel'
@@ -13,6 +14,13 @@ import {
   sampleWorkspace,
   type WorkspaceFile,
 } from './model/workspace'
+import {
+  errorSummary,
+  projectClient,
+  type ProjectClient,
+  type ProjectMetadata,
+  type RecentProject,
+} from './services/projectClient'
 import {
   projectGateway,
   type ProjectGateway,
@@ -27,24 +35,35 @@ const LeanEditor = lazy(() =>
 )
 
 interface AppProps {
+  client?: ProjectClient
   gateway?: ProjectGateway
 }
 
-function App({ gateway = projectGateway }: AppProps) {
+function App({ client = projectClient, gateway = projectGateway }: AppProps) {
   const [project, setProject] = useState(sampleWorkspace)
   const [files, setFiles] = useState(() => sampleWorkspace.files)
+  const [projectMetadata, setProjectMetadata] = useState<ProjectMetadata | null>(null)
+  const [recentProjects, setRecentProjects] = useState<RecentProject[]>([])
   const [activeFileId, setActiveFileId] = useState('main')
   const [openFileIds, setOpenFileIds] = useState(['main', 'arithmetic'])
   const [dirtyFileIds, setDirtyFileIds] = useState<string[]>([])
   const [cursor, setCursor] = useState({ lineNumber: 8, column: 15 })
   const [isOpening, setIsOpening] = useState(false)
+  const [isSaving, setIsSaving] = useState(false)
+  const [isSample, setIsSample] = useState(true)
   const [statusMessage, setStatusMessage] = useState('Ready')
 
-  const activeFile = files.find((file) => file.id === activeFileId) ?? files[0]
+  const activeFile = files.find((file) => file.id === activeFileId) ?? files[0] ?? null
   const openFiles = openFileIds
     .map((fileId) => files.find((file) => file.id === fileId))
     .filter((file): file is WorkspaceFile => Boolean(file))
-  const proofState = proofStateAt(activeFile.id, cursor.lineNumber)
+  const proofState = proofStateAt(activeFile?.id ?? '', cursor.lineNumber)
+
+  useEffect(() => {
+    void client.recentProjects()
+      .then(setRecentProjects)
+      .catch(() => undefined)
+  }, [client])
 
   function selectFile(fileId: string) {
     setOpenFileIds((current) =>
@@ -55,6 +74,10 @@ function App({ gateway = projectGateway }: AppProps) {
   }
 
   function updateActiveFile(content: string) {
+    if (!activeFile) {
+      return
+    }
+
     setFiles((current) =>
       current.map((file) =>
         file.id === activeFileId ? { ...file, content } : file,
@@ -64,6 +87,37 @@ function App({ gateway = projectGateway }: AppProps) {
       current.includes(activeFileId) ? current : [...current, activeFileId],
     )
     setStatusMessage('Unsaved changes')
+  }
+
+  async function loadProject(path: string) {
+    const discovered = await client.discoverProject(path)
+    const firstFileId = discovered.files[0]?.id ?? ''
+
+    startTransition(() => {
+      setProject({
+        name: discovered.metadata.name,
+        path: discovered.metadata.path,
+        files: discovered.files,
+      })
+      setFiles(discovered.files)
+      setProjectMetadata(discovered.metadata)
+      setActiveFileId(firstFileId)
+      setOpenFileIds(firstFileId ? [firstFileId] : [])
+      setDirtyFileIds([])
+      setCursor({ lineNumber: 1, column: 1 })
+      setIsSample(false)
+      setStatusMessage(
+        discovered.metadata.warnings.length > 0
+          ? `Opened ${discovered.metadata.name} with ${discovered.metadata.warnings.length} warning${discovered.metadata.warnings.length === 1 ? '' : 's'}`
+          : `Opened ${discovered.metadata.name}`,
+      )
+    })
+
+    try {
+      setRecentProjects(await client.recentProjects())
+    } catch {
+      setRecentProjects([])
+    }
   }
 
   async function openProject() {
@@ -78,18 +132,43 @@ function App({ gateway = projectGateway }: AppProps) {
         return
       }
 
-      startTransition(() => {
-        setProject((current) => ({
-          ...current,
-          name: selection.name,
-          path: selection.path,
-        }))
-        setStatusMessage(`Selected ${selection.name}`)
-      })
-    } catch {
-      setStatusMessage('Could not open the project')
+      await loadProject(selection.path)
+    } catch (error) {
+      setStatusMessage(errorSummary(error))
     } finally {
       setIsOpening(false)
+    }
+  }
+
+  async function openRecentProject(path: string) {
+    setIsOpening(true)
+    setStatusMessage('Opening recent project…')
+
+    try {
+      await loadProject(path)
+    } catch (error) {
+      setStatusMessage(errorSummary(error))
+    } finally {
+      setIsOpening(false)
+    }
+  }
+
+  async function saveActiveFile() {
+    if (!activeFile || isSample || !dirtyFileIds.includes(activeFile.id)) {
+      return
+    }
+
+    setIsSaving(true)
+    setStatusMessage(`Saving ${activeFile.name}…`)
+
+    try {
+      await client.saveFile(project.path, activeFile.path, activeFile.content)
+      setDirtyFileIds((current) => current.filter((fileId) => fileId !== activeFile.id))
+      setStatusMessage(`Saved ${activeFile.name}`)
+    } catch (error) {
+      setStatusMessage(errorSummary(error))
+    } finally {
+      setIsSaving(false)
     }
   }
 
@@ -115,6 +194,26 @@ function App({ gateway = projectGateway }: AppProps) {
             )}
             Open project
           </button>
+          <button
+            aria-label="Save file"
+            className="toolbar-button"
+            disabled={
+              isSaving
+              || isSample
+              || !activeFile
+              || !dirtyFileIds.includes(activeFile.id)
+            }
+            onClick={saveActiveFile}
+            title="Save file"
+            type="button"
+          >
+            {isSaving ? (
+              <LoaderCircle aria-hidden="true" className="spin" size={15} />
+            ) : (
+              <Save aria-hidden="true" size={15} />
+            )}
+            Save
+          </button>
           <button className="toolbar-button" disabled title="Lake build integration is planned" type="button">
             <Hammer aria-hidden="true" size={15} />
             Build
@@ -126,9 +225,13 @@ function App({ gateway = projectGateway }: AppProps) {
         <ProjectSidebar
           activeFileId={activeFileId}
           files={files}
+          isSample={isSample}
+          onOpenRecent={openRecentProject}
           onSelectFile={selectFile}
           projectName={project.name}
           projectPath={project.path}
+          recentProjects={recentProjects}
+          toolchain={projectMetadata?.leanToolchain}
         />
 
         <section aria-label="Lean editor" className="editor-pane">
@@ -147,24 +250,31 @@ function App({ gateway = projectGateway }: AppProps) {
                 {dirtyFileIds.includes(file.id) && <span aria-label="Unsaved" className="dirty-dot" />}
               </button>
             ))}
-            <span className="editor-path">{activeFile.path}</span>
+            <span className="editor-path">{activeFile?.path}</span>
           </div>
 
           <div className="editor-surface">
-            <Suspense
-              fallback={(
-                <div className="editor-loading">
-                  <LoaderCircle aria-hidden="true" className="spin" size={18} />
-                  <span>Loading editor</span>
-                </div>
-              )}
-            >
-              <LeanEditor
-                file={activeFile}
-                onChange={updateActiveFile}
-                onCursorChange={(lineNumber, column) => setCursor({ lineNumber, column })}
-              />
-            </Suspense>
+            {activeFile ? (
+              <Suspense
+                fallback={(
+                  <div className="editor-loading">
+                    <LoaderCircle aria-hidden="true" className="spin" size={18} />
+                    <span>Loading editor</span>
+                  </div>
+                )}
+              >
+                <LeanEditor
+                  file={activeFile}
+                  onChange={updateActiveFile}
+                  onCursorChange={(lineNumber, column) => setCursor({ lineNumber, column })}
+                />
+              </Suspense>
+            ) : (
+              <div className="editor-loading">
+                <FileCode2 aria-hidden="true" size={18} />
+                <span>No Lean source files found</span>
+              </div>
+            )}
           </div>
         </section>
 
