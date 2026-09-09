@@ -10,7 +10,8 @@
   <img alt="Status: Milestone 1" src="https://img.shields.io/badge/status-milestone%201-68717d">
   <img alt="Tauri 2" src="https://img.shields.io/badge/Tauri-2-24c8db?logo=tauri&logoColor=white">
   <img alt="React 19" src="https://img.shields.io/badge/React-19-087ea4?logo=react&logoColor=white">
-  <img alt="Tests passing" src="https://img.shields.io/badge/tests-passing-2389b8">
+  <a href="https://github.com/JGalego/LeanLander/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/JGalego/LeanLander/actions/workflows/ci.yml/badge.svg"></a>
+  <a href="LICENSE"><img alt="License: MIT" src="https://img.shields.io/github/license/JGalego/LeanLander"></a>
 </p>
 
 LeanLander is a focused, cross-platform desktop IDE for Lean 4. It aims to make opening a project and proving feel immediate, without asking users to become experts in Elan, Lake, or editor configuration first.

@@ -3,8 +3,8 @@ name = "leanlander"
 version = "0.1.0"
 description = "A focused desktop IDE for Lean 4"
 authors = ["LeanLander contributors"]
-license = ""
-repository = ""
+license = "MIT"
+repository = "https://github.com/JGalego/LeanLander"
 edition = "2021"
 rust-version = "1.77.2"
 
