@@ -19,6 +19,7 @@ import {
   Stethoscope,
   X,
 } from 'lucide-react'
+import { isTauri } from '@tauri-apps/api/core'
 import { DoctorPanel } from './components/DoctorPanel'
 import { NewProjectDialog, type NewProjectValues } from './components/NewProjectDialog'
 import { ProjectSidebar } from './components/ProjectSidebar'
@@ -72,6 +73,12 @@ import './App.css'
 
 const LeanEditor = lazy(() =>
   import('./components/LeanEditor').then(({ LeanEditor: Component }) => ({
+    default: Component,
+  })),
+)
+
+const InfoviewPanel = lazy(() =>
+  import('./components/InfoviewPanel').then(({ InfoviewPanel: Component }) => ({
     default: Component,
   })),
 )
@@ -169,6 +176,8 @@ function App({
   const proofState = isSample
     ? proofStateAt(activeFile?.id ?? '', cursor.lineNumber)
     : nativeProofState
+  const showInfoview = !isSample && isTauri() && activeFile
+    && serverStatus.state === 'ready' && serverStatus.capabilities.includes('widgets')
   const receiveLakeProgress = useEffectEvent(async (progress: LakeProgress) => {
     setLakeProgress(progress)
     setStatusMessage(
@@ -943,7 +952,7 @@ function App({
         </nav>
       </header>
 
-      <main className="workspace">
+      <main className={`workspace${showInfoview ? ' workspace--infoview' : ''}`}>
         <ProjectSidebar
           activeFileId={activeFileId}
           files={files}
@@ -1019,14 +1028,30 @@ function App({
           </div>
         </section>
 
-        <ProofPanel
-          column={cursor.column}
-          diagnostics={diagnostics}
-          messages={serverMessages}
-          lineNumber={cursor.lineNumber}
-          proofState={proofState}
-          processing={isElaborating}
-        />
+        {showInfoview && activeFile ? (
+          <Suspense fallback={<aside className="proof-panel" />}>
+            <InfoviewPanel
+              column={cursor.column}
+              language={language}
+              lineNumber={cursor.lineNumber}
+              onOpenLocation={openLocation}
+              processing={isElaborating}
+              projectPath={project.path}
+              relativePath={activeFile.path}
+              rpcWireFormat={serverStatus.rpcWireFormat}
+              serverVersion={serverStatus.version}
+            />
+          </Suspense>
+        ) : (
+          <ProofPanel
+            column={cursor.column}
+            diagnostics={diagnostics}
+            messages={serverMessages}
+            lineNumber={cursor.lineNumber}
+            proofState={proofState}
+            processing={isElaborating}
+          />
+        )}
       </main>
 
       <footer className="statusbar">

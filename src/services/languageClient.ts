@@ -16,6 +16,7 @@ export interface ServerStatus {
   toolchain: string | null
   version: string | null
   capabilities: string[]
+  rpcWireFormat?: 'v0' | 'v1' | null
 }
 
 export interface LspPosition {
@@ -126,6 +127,20 @@ export interface LanguageClient {
     relativePath: string,
     position: LspPosition,
   ): Promise<ProofState>
+  infoviewRequest?(
+    projectPath: string,
+    relativePath: string,
+    method: string,
+    params: unknown,
+  ): Promise<unknown>
+  infoviewNotification?(
+    projectPath: string,
+    relativePath: string,
+    method: string,
+    params: unknown,
+  ): Promise<void>
+  createRpcSession?(projectPath: string, relativePath: string): Promise<string>
+  closeRpcSession?(projectPath: string, sessionId: string): Promise<void>
   onDiagnostics?(handler: (event: DiagnosticEvent) => void): Promise<UnlistenFn>
   onFileProgress?(handler: (event: FileProgressEvent) => void): Promise<UnlistenFn>
   onMessage?(handler: (event: LeanMessage) => void): Promise<UnlistenFn>
@@ -220,6 +235,30 @@ export const languageClient: LanguageClient = {
           character: position.character,
         })
       : Promise.resolve(noProofState)
+  },
+
+  infoviewRequest(projectPath, relativePath, method, params) {
+    return isTauri()
+      ? invoke('lean_infoview_request', { projectPath, relativePath, method, params })
+      : Promise.resolve(null)
+  },
+
+  infoviewNotification(projectPath, relativePath, method, params) {
+    return isTauri()
+      ? invoke('lean_infoview_notification', { projectPath, relativePath, method, params })
+      : Promise.resolve()
+  },
+
+  createRpcSession(projectPath, relativePath) {
+    return isTauri()
+      ? invoke<string>('create_lean_rpc_session', { projectPath, relativePath })
+      : Promise.reject(new Error('Lean RPC sessions require the desktop application.'))
+  },
+
+  closeRpcSession(projectPath, sessionId) {
+    return isTauri()
+      ? invoke('close_lean_rpc_session', { projectPath, sessionId })
+      : Promise.resolve()
   },
 
   onDiagnostics(handler) {

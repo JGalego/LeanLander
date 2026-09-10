@@ -27,9 +27,9 @@ Narrowly scoped Rust commands own project discovery, source loading and saving, 
 
 Project discovery performs one bounded scan, ignores generated and dependency directories, and never follows symlinks. Later reads and writes accept only existing relative `.lean` paths whose canonical targets remain inside the selected project. Recent paths are stored in Tauri's application data directory.
 
-The Tauri capability grants `dialog:allow-open` only. Filesystem access remains behind validated Rust commands; there is no shell plugin, broad filesystem scope, or process capability exposed to the webview. Monaco and both fonts are packaged locally, so the editor does not fetch runtime assets from a CDN.
+The Tauri capability grants `dialog:allow-open` only. Filesystem access remains behind validated Rust commands; there is no shell plugin, broad filesystem scope, or process capability exposed to the webview. Monaco, the infoview runtime, and both fonts are packaged locally, so the editor does not fetch runtime assets from a CDN.
 
-For a real project, Monaco documents are synchronized with a managed Lean process using full-text, monotonically versioned LSP updates. Diagnostics become Monaco markers, and hover, completion, definition, references, and document symbols use Monaco providers backed by standard LSP requests. The proof panel uses Lean's infoview RPC at the current cursor position. Only the bundled sample uses fixture proof data.
+For a real project, Monaco documents are synchronized with a managed Lean process using full-text, monotonically versioned LSP updates. Diagnostics become Monaco markers, and hover, completion, definition, references, and document symbols use Monaco providers backed by standard LSP requests. The proof panel uses Lean's infoview RPC at the current cursor position. Projects advertising widget support use the official `@leanprover/infoview` runtime, including project-defined ProofWidgets. Only the bundled sample uses fixture proof data.
 
 ## Native Services
 
@@ -52,6 +52,10 @@ Lake remains the package and build authority. LeanLander creates the CLI-support
 One long-lived server process is owned per open workspace. The manager launches the project-selected Lean server through Elan, speaks framed JSON-RPC over stdio, routes document lifecycle events, answers server-to-client configuration requests, caches diagnostics by URI, and stops the process when its workspace closes.
 
 Diagnostics, hover, completion, definitions, references, and symbols use standard LSP messages. Proof state connects to Lean's existing infoview session and calls `Lean.Widget.getInteractiveGoals`; a native compatibility adapter strips rich RPC tags into the stable UI model and falls back to `$/lean/plainGoal` when interactive RPC is unavailable.
+
+Widget-capable projects receive a project-scoped RPC session. The native bridge allowlists the infoview request and notification envelopes, resolves the requested source inside the project, and replaces document URIs before forwarding them to Lean. Widget source is fetched through `Lean.Widget.getWidgetSource`; custom methods such as `GoLean.update` remain registered and evaluated by Lean rather than reimplemented in the frontend.
+
+Project widget JavaScript runs in an opaque-origin iframe with scripts enabled but without `allow-same-origin` or Tauri IPC. A narrow `postMessage` bridge exposes only the official editor API operations needed for RPC, navigation, insertion, configuration, and clipboard access. The iframe CSP permits inline bootstrap code, blob-backed ESM and styles, data/blob images, and the module loader's WebAssembly feature probe; it permits no ordinary network requests.
 
 ### Lean Doctor
 

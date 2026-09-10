@@ -35,6 +35,7 @@ pub struct ServerStatus {
     pub toolchain: Option<String>,
     pub version: Option<String>,
     pub capabilities: Vec<String>,
+    pub rpc_wire_format: Option<String>,
 }
 
 impl ServerStatus {
@@ -45,6 +46,7 @@ impl ServerStatus {
             toolchain: None,
             version: None,
             capabilities: Vec::new(),
+            rpc_wire_format: None,
         }
     }
 }
@@ -207,6 +209,51 @@ impl ServerManager {
             .proof_state(&file_uri(&source)?, line, character)
     }
 
+    pub fn infoview_request(
+        &self,
+        project_path: &Path,
+        relative_path: &Path,
+        method: &str,
+        params: Value,
+    ) -> ServiceResult<Value> {
+        let (root, source) = resolve_project_file(project_path, relative_path)?;
+        self.connection(&root)?
+            .infoview_request(&file_uri(&source)?, method, params)
+    }
+
+    pub fn infoview_notification(
+        &self,
+        project_path: &Path,
+        relative_path: &Path,
+        method: &str,
+        params: Value,
+    ) -> ServiceResult<()> {
+        let (root, source) = resolve_project_file(project_path, relative_path)?;
+        self.connection(&root)?
+            .infoview_notification(&file_uri(&source)?, method, params)
+    }
+
+    pub fn create_rpc_session(
+        &self,
+        project_path: &Path,
+        relative_path: &Path,
+    ) -> ServiceResult<String> {
+        let (root, source) = resolve_project_file(project_path, relative_path)?;
+        self.connection(&root)?
+            .rpc_session(&file_uri(&source)?)
+            .map(|session| {
+                session
+                    .as_str()
+                    .map(str::to_owned)
+                    .unwrap_or_else(|| session.to_string())
+            })
+    }
+
+    pub fn close_rpc_session(&self, project_path: &Path, session_id: &str) -> ServiceResult<()> {
+        let root = canonical_project_root(project_path)?;
+        self.connection(&root)?.close_rpc_session(session_id)
+    }
+
     fn connection(&self, root: &Path) -> ServiceResult<Arc<ServerConnection>> {
         self.servers
             .lock()
@@ -269,6 +316,7 @@ impl ServerConnection {
             toolchain: Some(toolchain.to_owned()),
             version: toolchain_version(toolchain),
             capabilities: Vec::new(),
+            rpc_wire_format: None,
         }));
 
         spawn_stdout_reader(
@@ -323,6 +371,10 @@ impl ServerConnection {
         status.state = "ready".to_owned();
         status.message = "Lean server ready".to_owned();
         status.capabilities = detected_capabilities(&result);
+        status.rpc_wire_format = result
+            .pointer("/capabilities/experimental/rpcProvider/rpcWireFormat")
+            .and_then(Value::as_str)
+            .map(str::to_owned);
         if let Some(version) = result
             .pointer("/serverInfo/version")
             .and_then(Value::as_str)
@@ -461,6 +513,59 @@ impl ServerConnection {
 
     fn proof_state(&self, uri: &str, line: u32, character: u32) -> ServiceResult<ProofState> {
         ProofCompatibilityAdapter::request(self, uri, line, character)
+    }
+
+    fn infoview_request(&self, uri: &str, method: &str, mut params: Value) -> ServiceResult<Value> {
+        if !matches!(
+            method,
+            "$/lean/rpc/call"
+                | "$/lean/plainGoal"
+                | "textDocument/hover"
+                | "textDocument/definition"
+        ) {
+            return Err(protocol_error(&format!(
+                "The infoview request method is not allowed: {method}"
+            )));
+        }
+        ensure_text_document_uri(&mut params, uri)?;
+        if method == "$/lean/rpc/call" {
+            let session_id = params.get("sessionId").cloned().ok_or_else(|| {
+                protocol_error("The infoview RPC call did not include a sessionId.")
+            })?;
+            self.notify(
+                "$/lean/rpc/keepAlive",
+                json!({"uri": uri, "sessionId": session_id}),
+            )?;
+        }
+        self.request(method, params)
+    }
+
+    fn infoview_notification(
+        &self,
+        uri: &str,
+        method: &str,
+        mut params: Value,
+    ) -> ServiceResult<()> {
+        if method != "$/lean/rpc/release" {
+            return Err(protocol_error(&format!(
+                "The infoview notification method is not allowed: {method}"
+            )));
+        }
+        ensure_top_level_uri(&mut params, uri)?;
+        self.notify(method, params)
+    }
+
+    fn close_rpc_session(&self, session_id: &str) -> ServiceResult<()> {
+        self.rpc_sessions
+            .lock()
+            .map_err(server_lock_error)?
+            .retain(|_, value| {
+                value.as_str().is_none_or(|value| value != session_id)
+                    && value
+                        .as_u64()
+                        .is_none_or(|value| value.to_string() != session_id)
+            });
+        Ok(())
     }
 
     fn interactive_goals(&self, uri: &str, line: u32, character: u32) -> ServiceResult<Value> {
@@ -833,6 +938,12 @@ fn server_request_result(method: &str, params: Option<&Value>, workspace_folders
 fn detected_capabilities(initialize_result: &Value) -> Vec<String> {
     let capabilities = initialize_result.get("capabilities");
     let mut detected = vec!["diagnostics".to_owned(), "proofState".to_owned()];
+    if capabilities
+        .and_then(|value| value.pointer("/experimental/rpcProvider"))
+        .is_some()
+    {
+        detected.push("widgets".to_owned());
+    }
     for (key, label) in [
         ("hoverProvider", "hover"),
         ("completionProvider", "completion"),
@@ -1144,6 +1255,22 @@ fn protocol_error(detail: &str) -> ServiceError {
     )
 }
 
+fn request_object(params: &mut Value) -> ServiceResult<&mut serde_json::Map<String, Value>> {
+    params
+        .as_object_mut()
+        .ok_or_else(|| protocol_error("The infoview request parameters must be a JSON object."))
+}
+
+fn ensure_text_document_uri(params: &mut Value, uri: &str) -> ServiceResult<()> {
+    request_object(params)?.insert("textDocument".to_owned(), json!({"uri": uri}));
+    Ok(())
+}
+
+fn ensure_top_level_uri(params: &mut Value, uri: &str) -> ServiceResult<()> {
+    request_object(params)?.insert("uri".to_owned(), json!(uri));
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1163,6 +1290,28 @@ mod tests {
         let decoded = read_message(&mut BufReader::new(Cursor::new(bytes))).unwrap();
 
         assert_eq!(decoded, message);
+    }
+
+    #[test]
+    fn scopes_infoview_messages_to_the_resolved_document() {
+        let uri = "file:///tmp/project/Main.lean";
+        let mut request = json!({
+            "textDocument": {"uri": "file:///outside.lean"},
+            "sessionId": "3"
+        });
+        ensure_text_document_uri(&mut request, uri).unwrap();
+        assert_eq!(
+            request,
+            json!({"textDocument": {"uri": uri}, "sessionId": "3"})
+        );
+
+        let mut release = json!({
+            "uri": "file:///outside.lean",
+            "sessionId": "3",
+            "refs": []
+        });
+        ensure_top_level_uri(&mut release, uri).unwrap();
+        assert_eq!(release, json!({"uri": uri, "sessionId": "3", "refs": []}));
     }
 
     #[test]
@@ -1254,6 +1403,7 @@ mod tests {
         assert_eq!(
             detected_capabilities(&json!({
                 "capabilities": {
+                    "experimental": {"rpcProvider": {"rpcWireFormat": "v1"}},
                     "hoverProvider": true,
                     "completionProvider": {},
                     "definitionProvider": false,
@@ -1264,6 +1414,7 @@ mod tests {
             vec![
                 "diagnostics",
                 "proofState",
+                "widgets",
                 "hover",
                 "completion",
                 "references",
@@ -1342,6 +1493,92 @@ mod tests {
         manager.diagnostics(&root, Path::new("Main.lean")).unwrap();
         manager.stop(&root).unwrap();
         fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    #[ignore = "requires LEANLANDER_WIDGET_PROJECT with a Lean project containing LeanLanderDemo.lean"]
+    fn loads_a_panel_widget_from_a_real_lean_project() {
+        let root = PathBuf::from(std::env::var("LEANLANDER_WIDGET_PROJECT").unwrap());
+        let toolchain = fs::read_to_string(root.join("lean-toolchain")).unwrap();
+        let source_path = Path::new("LeanLanderDemo.lean");
+        let source = fs::read_to_string(root.join(source_path)).unwrap();
+        let manager = ServerManager::default();
+
+        manager.start(&root, Some(toolchain.trim())).unwrap();
+        manager
+            .sync_document(&root, source_path, &source, 1, None)
+            .unwrap();
+        let session_id = manager.create_rpc_session(&root, source_path).unwrap();
+        let mut widgets = Value::Null;
+        for _ in 0..40 {
+            widgets = manager
+                .infoview_request(
+                    &root,
+                    source_path,
+                    "$/lean/rpc/call",
+                    json!({
+                        "textDocument": {"uri": "overwritten"},
+                        "position": {"line": 2, "character": 1},
+                        "sessionId": session_id,
+                        "method": "Lean.Widget.getWidgets",
+                        "params": {"line": 2, "character": 1}
+                    }),
+                )
+                .unwrap();
+            if widgets.get("widgets").and_then(Value::as_array).is_some() {
+                break;
+            }
+            thread::sleep(Duration::from_millis(250));
+        }
+        let widget = widgets
+            .get("widgets")
+            .and_then(Value::as_array)
+            .and_then(|widgets| widgets.first())
+            .unwrap_or_else(|| panic!("Go-Lean should attach a panel widget to #go: {widgets:#}"));
+        let hash = widget
+            .get("javascriptHash")
+            .and_then(Value::as_str)
+            .expect("widget should include its JavaScript hash");
+        let widget_source = manager
+            .infoview_request(
+                &root,
+                source_path,
+                "$/lean/rpc/call",
+                json!({
+                    "textDocument": {"uri": "overwritten"},
+                    "position": {"line": 2, "character": 1},
+                    "sessionId": session_id,
+                    "method": "Lean.Widget.getWidgetSource",
+                    "params": {"pos": {"line": 2, "character": 1}, "hash": hash}
+                }),
+            )
+            .unwrap();
+
+        assert!(widget_source
+            .get("sourcetext")
+            .and_then(Value::as_str)
+            .is_some_and(|source| source.contains("GoLean.update")));
+        let initial_view = manager
+            .infoview_request(
+                &root,
+                source_path,
+                "$/lean/rpc/call",
+                json!({
+                    "textDocument": {"uri": "overwritten"},
+                    "position": {"line": 2, "character": 1},
+                    "sessionId": session_id,
+                    "method": "GoLean.update",
+                    "params": {
+                        "game": widget["props"]["game"],
+                        "action": null,
+                        "review": null,
+                        "importSgf": null
+                    }
+                }),
+            )
+            .unwrap();
+        assert!(initial_view.get("view").is_some());
+        manager.stop(&root).unwrap();
     }
 
     fn temporary_directory(label: &str) -> PathBuf {

@@ -48,6 +48,7 @@ export function installE2eHarness() {
   let syncCount = 0
   let lakeProgress = fixture.lakeProgress ?? idleLakeProgress
   let toolchainStatus = fixture.toolchainStatus
+  const rpcResponseCounts = new Map<string, number>()
 
   Object.defineProperty(globalThis, 'isTauri', {
     configurable: true,
@@ -134,6 +135,34 @@ export function installE2eHarness() {
         return null
       case 'lean_proof_state':
         return fixture.proofStates?.[String(args.relativePath)] ?? emptyProofState
+      case 'create_lean_rpc_session':
+        return 'e2e-session'
+      case 'close_lean_rpc_session':
+      case 'lean_infoview_notification':
+        return null
+      case 'lean_infoview_request': {
+        const params = args.params as Record<string, unknown>
+        switch (params.method) {
+          case 'Lean.Widget.getInteractiveGoals':
+            return { goals: [] }
+          case 'Lean.Widget.getInteractiveTermGoal':
+            return null
+          case 'Lean.Widget.getInteractiveDiagnostics':
+            return []
+          case 'Lean.Widget.getWidgets':
+            return { widgets: fixture.infoview?.widgets ?? [] }
+          case 'Lean.Widget.getWidgetSource':
+            return fixture.infoview ? { sourcetext: fixture.infoview.widgetSource } : null
+          default: {
+            const method = String(params.method)
+            const response = fixture.infoview?.rpcResponses?.[method]
+            if (!Array.isArray(response)) return response ?? null
+            const index = rpcResponseCounts.get(method) ?? 0
+            rpcResponseCounts.set(method, index + 1)
+            return response[Math.min(index, response.length - 1)] ?? null
+          }
+        }
+      }
       case 'create_lake_project':
       case 'fetch_lake_dependencies':
       case 'build_lake_project':

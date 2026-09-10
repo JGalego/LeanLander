@@ -163,6 +163,31 @@ export function LeanEditor({
       })
     }
 
+    const insertText = (event: Event) => {
+      const detail = (event as CustomEvent<{
+        text?: string
+        kind?: 'here' | 'above'
+        position?: { line: number; character: number }
+      }>).detail
+      if (typeof detail?.text !== 'string') return
+      const requested = detail.position
+        ? { lineNumber: detail.position.line + 1, column: detail.position.character + 1 }
+        : editor.getPosition()
+      if (!requested) return
+      const position = detail.kind === 'above'
+        ? { lineNumber: Math.max(1, requested.lineNumber - 1), column: 1 }
+        : requested
+      editor.executeEdits('lean-infoview', [{ range: new monacoInstance.Range(
+        position.lineNumber,
+        position.column,
+        position.lineNumber,
+        position.column,
+      ), text: detail.text }])
+      editor.focus()
+    }
+    window.addEventListener('leanlander:insert-text', insertText)
+    editor.onDidDispose(() => window.removeEventListener('leanlander:insert-text', insertText))
+
     if (file.id === 'main') {
       editor.setPosition({ lineNumber: 8, column: 15 })
       onCursorChange(8, 15)

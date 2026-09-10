@@ -86,6 +86,32 @@ describe('languageClient', () => {
     })
   })
 
+  it('routes infoview RPC calls through a project-scoped native session', async () => {
+    mockedInvoke.mockResolvedValueOnce('session-7').mockResolvedValueOnce({ widgets: [] })
+
+    const sessionId = await languageClient.createRpcSession?.(
+      '/home/ada/Proof Garden',
+      'Garden/Main.lean',
+    )
+    await languageClient.infoviewRequest?.(
+      '/home/ada/Proof Garden',
+      'Garden/Main.lean',
+      '$/lean/rpc/call',
+      { sessionId, method: 'Lean.Widget.getWidgets' },
+    )
+
+    expect(mockedInvoke).toHaveBeenNthCalledWith(1, 'create_lean_rpc_session', {
+      projectPath: '/home/ada/Proof Garden',
+      relativePath: 'Garden/Main.lean',
+    })
+    expect(mockedInvoke).toHaveBeenNthCalledWith(2, 'lean_infoview_request', {
+      projectPath: '/home/ada/Proof Garden',
+      relativePath: 'Garden/Main.lean',
+      method: '$/lean/rpc/call',
+      params: { sessionId: 'session-7', method: 'Lean.Widget.getWidgets' },
+    })
+  })
+
   it('does not invoke native commands in browser preview', async () => {
     mockedIsTauri.mockReturnValue(false)
 

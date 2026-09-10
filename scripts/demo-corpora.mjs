@@ -160,6 +160,33 @@ export const demoCorpora = [
       },
     ],
   },
+  {
+    id: 'mal-pat-go-lean',
+    title: 'Go in Lean 4',
+    organization: 'Mal-Pat',
+    projectName: 'Go-Lean',
+    repository: 'https://github.com/Mal-Pat/Go-Lean',
+    commit: '9cbb6c1ba771c9bdc0bad929db55bc70ea2c0c3f',
+    toolchain: 'leanprover/lean4:v4.34.0-rc1',
+    lakefile: 'lakefile.toml',
+    license: 'Upstream license not declared; recording contains LeanLander-authored scratch source only',
+    attributionFiles: [],
+    buildVerification: 'The pinned project passed lake build and lake build Tests locally before recording.',
+    widgetSourcePath: 'GoLean/widget/goBoard.js',
+    files: [
+      {
+        path: 'LeanLanderDemo.lean',
+        focus: '#go from',
+        source: `import GoLean
+
+/-! AlphaGo vs Lee Sedol, game 2: the position before move 37. -/
+
+#go from "(;GM[1]FF[4]SZ[19]KM[7.5]RU[Chinese]PB[AlphaGo]PW[Lee Sedol];B[pd];W[dp];B[cd];W[qp];B[op];W[oq];B[nq];W[pq];B[cn];W[fq];B[mp];W[qn];B[ic];W[dj];B[po];W[qo];B[cp];W[cq];B[bq];W[co];B[bp];W[bo];B[do];W[bn];B[dq];W[ep];B[dr];W[cm];B[jp];W[cg];B[ed];W[qf];B[qe];W[pf];B[nd];W[pi])"
+`,
+        proofState: { goals: [] },
+      },
+    ],
+  },
 ]
 
 export function rawSourceUrl(corpus, path) {

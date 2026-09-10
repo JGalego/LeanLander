@@ -239,6 +239,63 @@ fn lean_proof_state(
 
 #[cfg(feature = "desktop")]
 #[tauri::command]
+fn lean_infoview_request(
+    manager: tauri::State<'_, ServerManager>,
+    project_path: String,
+    relative_path: String,
+    method: String,
+    params: Value,
+) -> Result<Value, ServiceError> {
+    manager.infoview_request(
+        PathBuf::from(project_path).as_path(),
+        PathBuf::from(relative_path).as_path(),
+        &method,
+        params,
+    )
+}
+
+#[cfg(feature = "desktop")]
+#[tauri::command]
+fn lean_infoview_notification(
+    manager: tauri::State<'_, ServerManager>,
+    project_path: String,
+    relative_path: String,
+    method: String,
+    params: Value,
+) -> Result<(), ServiceError> {
+    manager.infoview_notification(
+        PathBuf::from(project_path).as_path(),
+        PathBuf::from(relative_path).as_path(),
+        &method,
+        params,
+    )
+}
+
+#[cfg(feature = "desktop")]
+#[tauri::command]
+fn create_lean_rpc_session(
+    manager: tauri::State<'_, ServerManager>,
+    project_path: String,
+    relative_path: String,
+) -> Result<String, ServiceError> {
+    manager.create_rpc_session(
+        PathBuf::from(project_path).as_path(),
+        PathBuf::from(relative_path).as_path(),
+    )
+}
+
+#[cfg(feature = "desktop")]
+#[tauri::command]
+fn close_lean_rpc_session(
+    manager: tauri::State<'_, ServerManager>,
+    project_path: String,
+    session_id: String,
+) -> Result<(), ServiceError> {
+    manager.close_rpc_session(PathBuf::from(project_path).as_path(), &session_id)
+}
+
+#[cfg(feature = "desktop")]
+#[tauri::command]
 fn create_lake_project(
     manager: tauri::State<'_, LakeManager>,
     options: CreateProjectOptions,
@@ -347,6 +404,10 @@ pub fn run() {
             lean_diagnostics,
             lean_language_request,
             lean_proof_state,
+            lean_infoview_request,
+            lean_infoview_notification,
+            create_lean_rpc_session,
+            close_lean_rpc_session,
             create_lake_project,
             fetch_lake_dependencies,
             build_lake_project,

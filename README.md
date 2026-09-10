@@ -20,9 +20,46 @@ LeanLander is a focused, cross-platform desktop IDE for Lean 4. It aims to make 
 
 ## Proof Corpus Walkthroughs
 
-[![LeanLander navigating OpenAI's Navier-Stokes and Euler formalization](docs/assets/demos/openai-navier-stokes-euler.gif)](docs/demos.md)
+<table>
+  <tr>
+    <td width="50%">
+      <a href="docs/demos.md#openai-navier-stokes-and-euler">
+        <img src="docs/assets/demos/openai-navier-stokes-euler.gif" alt="LeanLander navigating OpenAI's Navier-Stokes and Euler formalization">
+      </a>
+      <br><strong>OpenAI: Navier-Stokes and Euler</strong>
+    </td>
+    <td width="50%">
+      <a href="docs/demos.md#anthropic-fermats-last-theorem">
+        <img src="docs/assets/demos/anthropic-fermats-last-theorem.gif" alt="LeanLander navigating Anthropic's Fermat's Last Theorem formalization">
+      </a>
+      <br><strong>Anthropic: Fermat's Last Theorem</strong>
+    </td>
+  </tr>
+  <tr>
+    <td width="50%">
+      <a href="docs/demos.md#pfr-community-project">
+        <img src="docs/assets/demos/teorth-pfr.gif" alt="LeanLander navigating the Polynomial Freiman-Ruzsa formalization">
+      </a>
+      <br><strong>PFR Community Project</strong>
+    </td>
+    <td width="50%">
+      <a href="docs/demos.md#chesslean">
+        <img src="docs/assets/demos/dwrensha-chess.gif" alt="LeanLander navigating Chess.lean">
+      </a>
+      <br><strong>Chess.lean</strong>
+    </td>
+  </tr>
+  <tr>
+    <td colspan="2" align="center">
+      <a href="docs/demos.md#go-lean-proofwidgets">
+        <img src="docs/assets/demos/mal-pat-go-lean.gif" width="50%" alt="LeanLander rendering AlphaGo's move 37 against Lee Sedol through Go-Lean ProofWidgets">
+      </a>
+      <br><strong>Go-Lean: AlphaGo's move 37</strong>
+    </td>
+  </tr>
+</table>
 
-Reproducible scripted sessions navigate pinned source from OpenAI's Navier-Stokes and Euler project, Anthropic's Fermat's Last Theorem project, the PFR community formalization, and Chess.lean. See [docs/demos.md](docs/demos.md) for all recordings, exact commits, integrity checks, attribution, and the distinction between deterministic proof-state fixtures and live upstream builds.
+Reproducible scripted sessions navigate pinned source from OpenAI's Navier-Stokes and Euler project, Anthropic's Fermat's Last Theorem project, the PFR community formalization, and Chess.lean. A fifth session loads Go-Lean's real ProofWidget and recreates AlphaGo's famous move 37 against Lee Sedol through its RPC-backed board. See [docs/demos.md](docs/demos.md) for exact commits, integrity checks, attribution, and the distinction between deterministic fixtures and live upstream builds.
 
 ## Installation
 

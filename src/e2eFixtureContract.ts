@@ -69,6 +69,11 @@ export interface E2eFixture {
   }
   diagnostics?: Record<string, E2eDiagnostic[]>
   proofStates?: Record<string, E2eProofState>
+  infoview?: {
+    widgets: Array<{ id: string; javascriptHash: string; props: unknown }>
+    widgetSource: string
+    rpcResponses?: Record<string, unknown | unknown[]>
+  }
   doctorReport?: {
     status: 'ok' | 'warning' | 'error' | 'unavailable'
     checks: Array<{

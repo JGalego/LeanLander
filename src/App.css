@@ -132,6 +132,10 @@
   min-height: 0;
 }
 
+.workspace--infoview {
+  grid-template-columns: 224px minmax(360px, 1fr) minmax(420px, 46vw);
+}
+
 .project-sidebar {
   display: flex;
   min-width: 0;
@@ -480,6 +484,32 @@
   overflow: hidden;
   background: #f7f8f4;
   border-left: 1px solid var(--line-strong);
+}
+
+.infoview-panel {
+  display: block;
+  overflow: hidden;
+  padding: 0;
+  color: var(--ink);
+  font-family: var(--sans);
+  --vscode-editor-background: var(--surface);
+  --vscode-editor-foreground: var(--ink);
+  --vscode-editor-font-family: var(--mono);
+  --vscode-editor-font-size: 12px;
+  --vscode-editorInfo-foreground: var(--accent);
+  --vscode-focusBorder: var(--accent);
+  --vscode-input-background: var(--surface-raised);
+  --vscode-input-border: var(--line-strong);
+  --vscode-input-foreground: var(--ink);
+  --vscode-panel-border: var(--line-strong);
+  --vscode-textLink-foreground: var(--accent-ink);
+}
+
+.infoview-panel iframe {
+  width: 100%;
+  height: 100%;
+  background: var(--surface);
+  border: 0;
 }
 
 .proof-goal + .proof-goal {
@@ -1185,6 +1215,10 @@
   .workspace {
     grid-template-columns: 190px minmax(320px, 1fr) 270px;
   }
+
+  .workspace--infoview {
+    grid-template-columns: 190px minmax(320px, 1fr) minmax(380px, 44vw);
+  }
 }
 
 @media (max-width: 760px) {
@@ -1223,6 +1257,10 @@
   .workspace {
     grid-template-columns: minmax(0, 1fr);
     grid-template-rows: minmax(300px, 1fr) minmax(205px, 38%);
+  }
+
+  .workspace--infoview {
+    grid-template-columns: minmax(0, 1fr);
   }
 
   .proof-panel {

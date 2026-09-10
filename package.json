@@ -12,7 +12,7 @@
     "build": "tsc -b && vite build",
     "demos:record": "node scripts/record-demos.mjs",
     "demos:verify": "node scripts/record-demos.mjs --verify-only",
-    "e2e": "playwright test",
+    "e2e": "playwright test e2e/workflows.spec.ts && npm run profile",
     "e2e:install": "playwright install chromium",
     "lint": "oxlint",
     "profile": "playwright test e2e/performance.spec.ts --workers=1",
@@ -26,6 +26,7 @@
   "dependencies": {
     "@fontsource-variable/ibm-plex-sans": "^5.3.0",
     "@fontsource/ibm-plex-mono": "^5.3.0",
+    "@leanprover/infoview": "^0.13.0",
     "@leanprover/unicode-input": "^0.1.12",
     "@monaco-editor/react": "^4.7.0",
     "@tauri-apps/api": "^2.11.1",

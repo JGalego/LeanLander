@@ -1,5 +1,6 @@
 import { AxeBuilder } from '@axe-core/playwright'
 import { expect, test } from '@playwright/test'
+import { readFile } from 'node:fs/promises'
 import { createTemporaryLeanProject, installFixture } from './fixtures.js'
 
 test('opens and explores a temporary Lean project', async ({ page }) => {
@@ -76,7 +77,9 @@ theorem closed_univ (α : Type) [TopologicalSpace α] : IsClosed (Set.univ : Set
 
     await page.getByRole('button', { name: 'Topology.lean' }).click()
     await expect(page.locator('.monaco-editor')).toContainText('closed_univ')
-    await expect(page.getByText('IsClosed (Set.univ : Set α)')).toBeVisible()
+    await expect(page.locator('.goal-expression').filter({
+      hasText: 'IsClosed (Set.univ : Set α)',
+    })).toBeVisible()
     await expect(page.getByText('3 goals')).toBeVisible()
     await expect(page.getByText('case step.right')).toBeVisible()
     await expect(page.getByText('#eval result: 4')).toBeVisible()
@@ -127,6 +130,116 @@ test('expands Lean abbreviations and exposes platform accelerators', async ({ pa
     await expect(page.getByRole('searchbox', { name: 'Filter project files' })).toBeFocused()
     await page.keyboard.press('Control+Shift+d')
     await expect(page.getByRole('dialog', { name: 'Lean Doctor' })).toBeVisible()
+  } finally {
+    await project.dispose()
+  }
+})
+
+test('renders a project panel widget in the sandboxed infoview', async ({ page }) => {
+  const project = await createTemporaryLeanProject('WidgetProof', [{
+    path: 'Main.lean',
+    content: '#widget\n',
+  }])
+  project.fixture.serverStatus = {
+    state: 'ready',
+    message: 'Lean server ready',
+    toolchain: 'leanprover/lean4:v4.19.0',
+    version: '4.19.0',
+    capabilities: ['diagnostics', 'proofState', 'widgets'],
+  }
+  project.fixture.infoview = {
+    widgets: [{ id: 'leanlander-test-widget', javascriptHash: '123', props: {} }],
+    widgetSource: `import * as React from 'react';
+export default function Widget() {
+  return React.createElement('div', { 'data-testid': 'proof-widget' }, 'Interactive board ready')
+}`,
+  }
+
+  try {
+    await installFixture(page, project.fixture)
+    await page.goto('/')
+    await page.getByRole('button', { name: 'Open project' }).click()
+    await page.locator('.monaco-editor').click()
+
+    const infoview = page.frameLocator('iframe[title="Lean infoview"]')
+    await expect(infoview.getByTestId('proof-widget')).toHaveText('Interactive board ready')
+  } finally {
+    await project.dispose()
+  }
+})
+
+test('renders the real Go-Lean board widget', async ({ page }) => {
+  const goLeanProject = process.env.LEANLANDER_WIDGET_PROJECT
+  test.skip(!goLeanProject, 'requires LEANLANDER_WIDGET_PROJECT')
+  const game = {
+    actions: [
+      { c: 4, kind: 'play', r: 4, who: '' },
+      { c: 2, kind: 'play', r: 2, who: '' },
+    ],
+    config: {
+      blackName: 'Black', cols: 9, firstToMove: '', handicap: 0, ko: 'simple',
+      komi2: 13, passesToScore: 2, rows: 9, scoring: 'territory',
+      selfCaptureAllowed: false, setupBlack: [], setupWhite: [], whiteName: 'White',
+    },
+  }
+  const board = Array.from({ length: 9 }, (_, row) =>
+    Array.from({ length: 9 }, (_, col) => ({
+      dead: false,
+      hoshi: (row === 2 || row === 4 || row === 6) && (col === 2 || col === 4 || col === 6),
+      lastMove: row === 2 && col === 2,
+      stone: row === 2 && col === 2 ? 'white' : row === 4 && col === 4 ? 'black' : '',
+      territory: '',
+    })))
+  const project = await createTemporaryLeanProject('Go-Lean', [{
+    path: 'LeanLanderDemo.lean',
+    content: 'import GoLean\n\n#go from "(;GM[1]FF[4]SZ[9];B[ee];W[cc])"\n',
+  }])
+  project.fixture.serverStatus = {
+    state: 'ready',
+    message: 'Lean server ready',
+    toolchain: 'leanprover/lean4:v4.34.0-rc1',
+    version: '4.34.0-rc1',
+    capabilities: ['diagnostics', 'proofState', 'widgets'],
+  }
+  project.fixture.infoview = {
+    widgets: [{
+      id: 'GoLean.GoBoardWidget',
+      javascriptHash: '13941612456979887841',
+      props: {
+        game,
+        warnings: [],
+      },
+    }],
+    widgetSource: await readFile(`${goLeanProject}/GoLean/widget/goBoard.js`, 'utf8'),
+    rpcResponses: {
+      'GoLean.update': {
+        error: null,
+        game,
+        view: {
+          blackAccepted: false, blackCaptures: 0, blackName: 'Black', board,
+          colLabels: ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'J'], cols: 9,
+          consecPasses: 0, handicapLeft: 0, komi: '6.5', moveNum: 2,
+          passesToScore: 2, phase: 'review', result: null, reviewMove: 0,
+          rowLabels: ['9', '8', '7', '6', '5', '4', '3', '2', '1'], rows: 9,
+          rulesSummary: 'territory scoring · simple ko · komi 6.5', scoreCard: null,
+          sgf: '(;GM[1]FF[4]CA[UTF-8]AP[GoLean]SZ[9]KM[6.5]RU[Japanese]PB[Black]PW[White]\n;B[ee];W[cc])',
+          toMove: 'black', totalMoves: 2, whiteAccepted: false,
+          whiteCaptures: 0, whiteName: 'White',
+        },
+        warning: null,
+      },
+    },
+  }
+
+  try {
+    await installFixture(page, project.fixture)
+    await page.goto('/')
+    await page.getByRole('button', { name: 'Open project' }).click()
+    await page.locator('.monaco-editor').click()
+
+    const infoview = page.frameLocator('iframe[title="Lean infoview"]')
+    await expect(infoview.locator('svg')).toBeVisible()
+    await expect(infoview.getByRole('button', { name: 'Back to game' })).toBeVisible()
   } finally {
     await project.dispose()
   }
