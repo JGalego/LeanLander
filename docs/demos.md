@@ -1,6 +1,6 @@
 # Proof Corpus Walkthroughs
 
-These scripted sessions exercise LeanLander with source from three substantial Lean formalizations. Every recording fetches the listed files directly from an exact upstream commit, verifies their SHA-256 hashes, and then drives LeanLander through source navigation, proof-state inspection, Lean Doctor, and the project build boundary.
+These scripted sessions exercise LeanLander with source from four substantial Lean projects. Every recording fetches the listed files directly from an exact upstream commit, verifies their SHA-256 hashes, and then drives LeanLander through source navigation, proof-state inspection, Lean Doctor, and the project build boundary.
 
 The recordings are deterministic browser acceptance fixtures. They display authentic pinned source, but their proof states and environment checks are scripted rather than responses from a live Lean server. They do not claim to rebuild the full upstream projects. Lean Doctor and the final status bar state this boundary inside every recording.
 
@@ -39,6 +39,18 @@ The session shows the readable odd-prime split that closes `FermatLastTheorem`, 
 - License: [Apache-2.0](https://github.com/teorth/pfr/blob/3d7898164ebff70a809dce618f9082a7b39e7850/LICENSE)
 
 The session starts with the self-contained Mathlib-facing statement and then opens the headline covering proof, where a small-doubling set is covered by fewer than `2 * K ^ 12` cosets.
+
+## Chess.lean
+
+![LeanLander navigating Chess.lean](assets/demos/dwrensha-chess.gif)
+
+- Repository: [dwrensha/Chess.lean](https://github.com/dwrensha/Chess.lean)
+- Commit: [`4f0c2887128b6c669509df8647fd8c98012e28af`](https://github.com/dwrensha/Chess.lean/tree/4f0c2887128b6c669509df8647fd8c98012e28af)
+- Lean toolchain: `leanprover/lean4:v4.15.0`
+- Scenes: [`Chess/Examples.lean`](https://github.com/dwrensha/Chess.lean/blob/4f0c2887128b6c669509df8647fd8c98012e28af/Chess/Examples.lean) and [`Chess/Example218.lean`](https://github.com/dwrensha/Chess.lean/blob/4f0c2887128b6c669509df8647fd8c98012e28af/Chess/Example218.lean)
+- License: [Apache-2.0](https://github.com/dwrensha/Chess.lean/blob/4f0c2887128b6c669509df8647fd8c98012e28af/LICENSE)
+
+The project was built locally with its pinned Lean 4.15.0 toolchain and Mathlib 4.15.0 dependency before recording. The walkthrough opens the Unicode chessboard for `smothered_mate`, follows its chess-specific tactic script, and then visits the 218-legal-move stress example. As with the other recordings, the displayed source is authentic and integrity-checked while the proof-state panel is deterministic fixture data.
 
 ## Reproducing the Recordings
 

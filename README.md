@@ -22,7 +22,7 @@ LeanLander is a focused, cross-platform desktop IDE for Lean 4. It aims to make 
 
 [![LeanLander navigating OpenAI's Navier-Stokes and Euler formalization](docs/assets/demos/openai-navier-stokes-euler.gif)](docs/demos.md)
 
-Reproducible scripted sessions navigate pinned source from OpenAI's Navier-Stokes and Euler project, Anthropic's Fermat's Last Theorem project, and the PFR community formalization. See [docs/demos.md](docs/demos.md) for all recordings, exact commits, integrity checks, attribution, and the distinction between deterministic proof-state fixtures and live upstream builds.
+Reproducible scripted sessions navigate pinned source from OpenAI's Navier-Stokes and Euler project, Anthropic's Fermat's Last Theorem project, the PFR community formalization, and Chess.lean. See [docs/demos.md](docs/demos.md) for all recordings, exact commits, integrity checks, attribution, and the distinction between deterministic proof-state fixtures and live upstream builds.
 
 ## Installation
 

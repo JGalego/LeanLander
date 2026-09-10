@@ -123,6 +123,43 @@ export const demoCorpora = [
       },
     ],
   },
+  {
+    id: 'dwrensha-chess',
+    title: 'Chess in Lean 4',
+    organization: 'David Renshaw',
+    projectName: 'Chess',
+    repository: 'https://github.com/dwrensha/Chess.lean',
+    commit: '4f0c2887128b6c669509df8647fd8c98012e28af',
+    toolchain: 'leanprover/lean4:v4.15.0',
+    lakefile: 'lakefile.lean',
+    license: 'Apache-2.0',
+    attributionFiles: ['LICENSE'],
+    files: [
+      {
+        path: 'Chess/Examples.lean',
+        focus: 'theorem smothered_mate',
+        sha256: 'f49d57e2dee5fc3e311e1af1614f47ca586c83a9be17a2b98614b15675458ce9',
+        proofState: {
+          declaration: 'smothered_mate',
+          goalCount: 1,
+          hypotheses: [],
+          target: 'ForcedWin .white smotheredMatePosition',
+        },
+      },
+      {
+        path: 'Chess/Example218.lean',
+        focus: 'theorem position_with_218_moves',
+        sha256: 'd214aabece9a571ebb47ffee1f12196c31e07dcd53cf6970562ddf0f7e564485',
+        proofState: {
+          goals: Array.from({ length: 218 }, (_, index) => ({
+            declaration: `move ${index + 1} of 218`,
+            hypotheses: [],
+            target: `ForcedWin .black (legalReply example_5 ${index + 1})`,
+          })),
+        },
+      },
+    ],
+  },
 ]
 
 export function rawSourceUrl(corpus, path) {

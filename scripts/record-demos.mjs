@@ -137,6 +137,8 @@ async function pause(page, milliseconds = 1_200) {
 async function focusMarker(page, source) {
   const lineNumber = source.content.slice(0, source.content.indexOf(source.focus))
     .split('\n').length
+  const declaration = source.proofState.goals?.[0]?.declaration
+    ?? source.proofState.declaration
   await page.evaluate((line) => {
     window.dispatchEvent(new CustomEvent('leanlander:e2e-reveal-line', {
       detail: { lineNumber: line },
@@ -144,7 +146,7 @@ async function focusMarker(page, source) {
   }, lineNumber)
   await page.locator('.view-line').filter({ hasText: source.focus }).first().waitFor()
   await page.locator('.proof-header strong')
-    .getByText(source.proofState.declaration, { exact: true })
+    .getByText(declaration, { exact: true })
     .waitFor()
   await pause(page, 1_500)
 }
