@@ -2,6 +2,7 @@ import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, it, vi } from 'vitest'
 import type { WorkspaceFile } from './model/workspace'
+import type { DoctorClient } from './services/doctorClient'
 import type { LanguageClient } from './services/languageClient'
 import type { LakeClient } from './services/lakeClient'
 import type { ProjectClient } from './services/projectClient'
@@ -71,6 +72,107 @@ describe('App', () => {
 
     expect(screen.getByText('ih')).toBeInTheDocument()
     expect(screen.getByText('⊢ Nat.succ n + 0 = Nat.succ n')).toBeInTheDocument()
+  })
+
+  it('opens Lean Doctor and loads details only on request', async () => {
+    const user = userEvent.setup()
+    const doctor: DoctorClient = {
+      diagnose: vi.fn().mockResolvedValue({
+        status: 'ok',
+        checks: [{
+          id: 'elan',
+          label: 'Elan',
+          status: 'ok',
+          summary: 'Elan 4.2.0 is available.',
+          repair: null,
+        }],
+      }),
+      logs: vi.fn().mockResolvedValue({
+        sections: [{ label: 'Environment', content: 'Elan: 4.2.0' }],
+      }),
+    }
+
+    render(<App doctor={doctor} />)
+    await user.click(screen.getByRole('button', { name: 'Doctor' }))
+
+    expect(await screen.findByText('Elan 4.2.0 is available.')).toBeInTheDocument()
+    expect(doctor.diagnose).toHaveBeenCalledWith(null, null)
+    expect(doctor.logs).not.toHaveBeenCalled()
+
+    await user.click(screen.getByRole('button', { name: 'Show details' }))
+    expect(await screen.findByText('Elan: 4.2.0')).toBeInTheDocument()
+    expect(doctor.logs).toHaveBeenCalledWith(null, null)
+  })
+
+  it('runs a dependency repair through the existing Lake service', async () => {
+    const user = userEvent.setup()
+    const gateway: ProjectGateway = {
+      chooseProject: vi.fn().mockResolvedValue({
+        name: 'Proof Garden',
+        path: '/home/ada/Proof Garden',
+      }),
+      chooseProjectParent: vi.fn(),
+    }
+    const client: ProjectClient = {
+      discoverProject: vi.fn().mockResolvedValue({
+        metadata: {
+          name: 'Proof Garden',
+          path: '/home/ada/Proof Garden',
+          leanToolchain: 'leanprover/lean4:v4.19.0',
+          lakefile: 'lakefile.toml',
+          sourceRoots: [],
+          warnings: [],
+        },
+        files: [],
+      }),
+      loadFile: vi.fn(),
+      saveFile: vi.fn(),
+      recentProjects: vi.fn().mockResolvedValue([]),
+    }
+    const lake: LakeClient = {
+      create: vi.fn(),
+      fetch: vi.fn().mockResolvedValue(undefined),
+      build: vi.fn(),
+      progress: vi.fn().mockResolvedValue({
+        operation: 'fetch',
+        stage: 'complete',
+        message: 'Dependencies are up to date',
+        running: false,
+        succeeded: true,
+        projectPath: '/home/ada/Proof Garden',
+        failure: null,
+      }),
+      cancel: vi.fn(),
+    }
+    const doctor: DoctorClient = {
+      diagnose: vi.fn().mockResolvedValue({
+        status: 'warning',
+        checks: [{
+          id: 'dependencies',
+          label: 'Dependencies',
+          status: 'warning',
+          summary: 'Dependencies have not been resolved yet.',
+          repair: {
+            id: 'update-dependencies',
+            label: 'Update dependencies',
+            description: 'Run Lake update.',
+            canRun: true,
+          },
+        }],
+      }),
+      logs: vi.fn(),
+    }
+
+    render(<App client={client} doctor={doctor} gateway={gateway} lake={lake} />)
+    await user.click(screen.getByRole('button', { name: 'Open project' }))
+    await screen.findByText('Opened Proof Garden')
+    await user.click(screen.getByRole('button', { name: 'Doctor' }))
+    await user.click(await screen.findByRole('button', { name: 'Update dependencies' }))
+
+    expect(lake.fetch).toHaveBeenCalledWith(
+      '/home/ada/Proof Garden',
+      'leanprover/lean4:v4.19.0',
+    )
   })
 
   it('installs a missing project toolchain through the repair action', async () => {

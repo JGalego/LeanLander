@@ -77,6 +77,7 @@ pub struct LakeManager {
     child: Arc<Mutex<Option<Child>>>,
     progress: Arc<Mutex<LakeProgress>>,
     active: Arc<Mutex<Option<Arc<AtomicBool>>>>,
+    log: Arc<Mutex<VecDeque<String>>>,
 }
 
 #[derive(Clone)]
@@ -85,6 +86,7 @@ struct OperationContext {
     progress: Arc<Mutex<LakeProgress>>,
     active: Arc<Mutex<Option<Arc<AtomicBool>>>>,
     cancelled: Arc<AtomicBool>,
+    log: Arc<Mutex<VecDeque<String>>>,
 }
 
 #[derive(Clone, Copy)]
@@ -204,6 +206,13 @@ impl LakeManager {
             .map_err(lake_lock_error)
     }
 
+    pub fn diagnostic_log(&self) -> ServiceResult<Vec<String>> {
+        self.log
+            .lock()
+            .map(|lines| lines.iter().cloned().collect())
+            .map_err(lake_lock_error)
+    }
+
     pub fn cancel(&self) -> ServiceResult<()> {
         let active = self.active.lock().map_err(lake_lock_error)?;
         let Some(cancelled) = active.as_ref() else {
@@ -273,12 +282,14 @@ impl LakeManager {
         }
         let cancelled = Arc::new(AtomicBool::new(false));
         *active = Some(Arc::clone(&cancelled));
+        self.log.lock().map_err(lake_lock_error)?.clear();
         *current = progress;
         Ok(OperationContext {
             child: Arc::clone(&self.child),
             progress: Arc::clone(&self.progress),
             active: Arc::clone(&self.active),
             cancelled,
+            log: Arc::clone(&self.log),
         })
     }
 }
@@ -366,7 +377,14 @@ fn run_process(
     ]
     .into_iter()
     .flatten()
-    .map(|reader| stream_process_output(reader, Arc::clone(&context.progress), Arc::clone(&output)))
+    .map(|reader| {
+        stream_process_output(
+            reader,
+            Arc::clone(&context.progress),
+            Arc::clone(&output),
+            Arc::clone(&context.log),
+        )
+    })
     .collect::<Vec<_>>();
     let status = wait_for_process(context)?;
     for reader in readers {
@@ -395,6 +413,7 @@ fn stream_process_output(
     output: ProcessOutput,
     progress: Arc<Mutex<LakeProgress>>,
     log: Arc<Mutex<VecDeque<String>>>,
+    diagnostic_log: Arc<Mutex<VecDeque<String>>>,
 ) -> thread::JoinHandle<()> {
     thread::spawn(move || {
         let reader: Box<dyn std::io::Read> = match output {
@@ -411,13 +430,20 @@ fn stream_process_output(
                 }
             }
             if let Ok(mut lines) = log.lock() {
-                if lines.len() == MAX_LOG_LINES {
-                    lines.pop_front();
-                }
-                lines.push_back(line);
+                append_log_line(&mut lines, line.clone());
+            }
+            if let Ok(mut lines) = diagnostic_log.lock() {
+                append_log_line(&mut lines, line);
             }
         }
     })
+}
+
+fn append_log_line(lines: &mut VecDeque<String>, line: String) {
+    if lines.len() == MAX_LOG_LINES {
+        lines.pop_front();
+    }
+    lines.push_back(line);
 }
 
 fn wait_for_process(context: &OperationContext) -> Result<ExitStatus, OperationFailure> {
@@ -763,6 +789,7 @@ mod tests {
             progress: Arc::clone(&progress),
             active: Arc::clone(&active),
             cancelled,
+            log: Arc::new(Mutex::new(VecDeque::new())),
         };
 
         finish_operation(
@@ -796,6 +823,7 @@ mod tests {
             progress: Arc::clone(&progress),
             active,
             cancelled,
+            log: Arc::new(Mutex::new(VecDeque::new())),
         };
 
         finish_operation(&context, Err(cancelled_failure()), "unused", None);
@@ -804,6 +832,22 @@ mod tests {
         assert_eq!(result.stage, "cancelled");
         assert_eq!(result.succeeded, Some(false));
         assert!(result.failure.is_none());
+    }
+
+    #[test]
+    fn diagnostic_log_keeps_only_the_latest_lines() {
+        let manager = LakeManager::default();
+        {
+            let mut log = manager.log.lock().unwrap();
+            for index in 0..=MAX_LOG_LINES {
+                append_log_line(&mut log, format!("line {index}"));
+            }
+        }
+
+        let log = manager.diagnostic_log().unwrap();
+        assert_eq!(log.len(), MAX_LOG_LINES);
+        assert_eq!(log.first().map(String::as_str), Some("line 1"));
+        assert_eq!(log.last().map(String::as_str), Some("line 300"));
     }
 
     #[test]

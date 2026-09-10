@@ -45,9 +45,9 @@
 
 ## Milestone 6: Lean Doctor
 
-- [ ] Diagnose Elan, Lean, Lake, toolchain, dependency, and server state
-- [ ] Offer explicit, safe repairs
-- [ ] Keep detailed logs available without exposing them by default
+- [x] Diagnose Elan, Lean, Lake, toolchain, dependency, and server state
+- [x] Offer explicit, safe repairs
+- [x] Keep detailed logs available without exposing them by default
 
 ## Milestone 7: Release Readiness
 

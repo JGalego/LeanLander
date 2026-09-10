@@ -1,3 +1,4 @@
+pub mod doctor;
 pub mod lake;
 pub mod project;
 pub mod server;

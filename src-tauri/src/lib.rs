@@ -4,6 +4,7 @@ pub mod services;
 use serde_json::Value;
 #[cfg(feature = "desktop")]
 use services::{
+    doctor::{self, DoctorLogs, DoctorReport},
     lake::{CreateProjectOptions, LakeManager, LakeProgress},
     project::{self, DiscoveredProject, ProjectFile, RecentProject},
     server::{LanguageFeature, ProofState, ServerManager, ServerStatus},
@@ -269,6 +270,40 @@ fn cancel_lake_operation(manager: tauri::State<'_, LakeManager>) -> Result<(), S
 }
 
 #[cfg(feature = "desktop")]
+#[tauri::command]
+fn diagnose_environment(
+    lake: tauri::State<'_, LakeManager>,
+    server: tauri::State<'_, ServerManager>,
+    project_path: Option<String>,
+    required_toolchain: Option<String>,
+) -> Result<DoctorReport, ServiceError> {
+    let project_path = project_path.map(PathBuf::from);
+    doctor::diagnose(
+        project_path.as_deref(),
+        required_toolchain.as_deref(),
+        &lake,
+        &server,
+    )
+}
+
+#[cfg(feature = "desktop")]
+#[tauri::command]
+fn doctor_logs(
+    lake: tauri::State<'_, LakeManager>,
+    server: tauri::State<'_, ServerManager>,
+    project_path: Option<String>,
+    required_toolchain: Option<String>,
+) -> Result<DoctorLogs, ServiceError> {
+    let project_path = project_path.map(PathBuf::from);
+    doctor::diagnostic_logs(
+        project_path.as_deref(),
+        required_toolchain.as_deref(),
+        &lake,
+        &server,
+    )
+}
+
+#[cfg(feature = "desktop")]
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -297,7 +332,9 @@ pub fn run() {
             fetch_lake_dependencies,
             build_lake_project,
             lake_operation_progress,
-            cancel_lake_operation
+            cancel_lake_operation,
+            diagnose_environment,
+            doctor_logs
         ])
         .setup(|app| {
             if cfg!(debug_assertions) {

@@ -16,8 +16,10 @@ import {
   LoaderCircle,
   RefreshCw,
   Save,
+  Stethoscope,
   X,
 } from 'lucide-react'
+import { DoctorPanel } from './components/DoctorPanel'
 import { NewProjectDialog, type NewProjectValues } from './components/NewProjectDialog'
 import { ProjectSidebar } from './components/ProjectSidebar'
 import { ProofPanel } from './components/ProofPanel'
@@ -27,6 +29,10 @@ import {
   type ProofState,
   type WorkspaceFile,
 } from './model/workspace'
+import {
+  doctorClient,
+  type DoctorClient,
+} from './services/doctorClient'
 import {
   languageClient,
   offlineServerStatus,
@@ -68,6 +74,7 @@ const LeanEditor = lazy(() =>
 
 interface AppProps {
   client?: ProjectClient
+  doctor?: DoctorClient
   gateway?: ProjectGateway
   language?: LanguageClient
   lake?: LakeClient
@@ -82,6 +89,7 @@ const noProofState: ProofState = {
 
 function App({
   client = projectClient,
+  doctor = doctorClient,
   gateway = projectGateway,
   language = languageClient,
   lake = lakeClient,
@@ -105,6 +113,7 @@ function App({
   const [installProgress, setInstallProgress] = useState<InstallProgress | null>(null)
   const [lakeProgress, setLakeProgress] = useState<LakeProgress | null>(null)
   const [newProjectParent, setNewProjectParent] = useState<string | null>(null)
+  const [showDoctor, setShowDoctor] = useState(false)
   const [serverStatus, setServerStatus] = useState<ServerStatus>(offlineServerStatus)
   const [nativeProofState, setNativeProofState] = useState<ProofState>(noProofState)
   const [diagnostics, setDiagnostics] = useState<LspDiagnostic[]>([])
@@ -506,10 +515,10 @@ function App({
     }
   }
 
-  async function installRequiredToolchain() {
+  async function installRequiredToolchain(): Promise<string | null> {
     const requiredToolchain = toolchainStatus.requiredToolchain
     if (!requiredToolchain) {
-      return
+      return 'No project toolchain is selected.'
     }
 
     setStatusMessage(`Installing ${requiredToolchain}…`)
@@ -517,12 +526,14 @@ function App({
     try {
       await toolchains.install(requiredToolchain)
 
+      let finalProgress: InstallProgress | null = null
       while (true) {
         const progress = await toolchains.progress()
         setInstallProgress(progress)
         setStatusMessage(progress.message)
 
         if (!progress.running) {
+          finalProgress = progress
           break
         }
 
@@ -530,8 +541,11 @@ function App({
       }
 
       setToolchainStatus(await toolchains.status(requiredToolchain))
+      return finalProgress?.succeeded === false ? finalProgress.message : null
     } catch (error) {
-      setStatusMessage(errorSummary(error))
+      const message = errorSummary(error)
+      setStatusMessage(message)
+      return message
     }
   }
 
@@ -595,7 +609,7 @@ function App({
     }
   }
 
-  async function fetchDependencies() {
+  async function fetchDependencies(): Promise<string | null> {
     setIsStartingLake(true)
     setStatusMessage('Updating project dependencies…')
 
@@ -609,9 +623,12 @@ function App({
         running: true,
         projectPath: project.path,
       })
+      return null
     } catch (error) {
+      const message = errorSummary(error)
       setLakeProgress(null)
-      setStatusMessage(errorSummary(error))
+      setStatusMessage(message)
+      return message
     } finally {
       setIsStartingLake(false)
     }
@@ -647,6 +664,64 @@ function App({
       setStatusMessage(progress.message)
     } catch (error) {
       setStatusMessage(errorSummary(error))
+    }
+  }
+
+  async function restartLeanServer() {
+    if (isSample) {
+      return
+    }
+    setStatusMessage('Restarting Lean server…')
+    setServerStatus({
+      ...offlineServerStatus,
+      state: 'starting',
+      message: 'Restarting Lean server',
+      toolchain: projectMetadata?.leanToolchain ?? null,
+    })
+    try {
+      await language.stop(project.path)
+      const status = await language.start(
+        project.path,
+        projectMetadata?.leanToolchain ?? null,
+      )
+      setServerStatus(status)
+      setStatusMessage(status.message)
+    } catch (error) {
+      const message = errorSummary(error)
+      setServerStatus({
+        ...offlineServerStatus,
+        state: 'error',
+        message,
+        toolchain: projectMetadata?.leanToolchain ?? null,
+      })
+      setStatusMessage(message)
+      throw error
+    }
+  }
+
+  async function runDoctorRepair(repairId: string) {
+    switch (repairId) {
+      case 'install-toolchain':
+        {
+          const error = await installRequiredToolchain()
+          if (error) {
+            throw new Error(error)
+          }
+        }
+        return
+      case 'update-dependencies':
+        {
+          const error = await fetchDependencies()
+          if (error) {
+            throw new Error(error)
+          }
+        }
+        return
+      case 'restart-server':
+        await restartLeanServer()
+        return
+      default:
+        throw new Error('This repair requires a manual action.')
     }
   }
 
@@ -730,6 +805,15 @@ function App({
           >
             <Hammer aria-hidden="true" size={15} />
             Build
+          </button>
+          <button
+            className="toolbar-button"
+            onClick={() => setShowDoctor(true)}
+            title="Diagnose Lean environment"
+            type="button"
+          >
+            <Stethoscope aria-hidden="true" size={15} />
+            Doctor
           </button>
         </nav>
       </header>
@@ -840,6 +924,15 @@ function App({
           onCancel={() => setNewProjectParent(null)}
           onCreate={createProject}
           parentPath={newProjectParent}
+        />
+      )}
+      {showDoctor && (
+        <DoctorPanel
+          client={doctor}
+          onClose={() => setShowDoctor(false)}
+          onRepair={runDoctorRepair}
+          projectPath={isSample ? null : project.path}
+          requiredToolchain={projectMetadata?.leanToolchain ?? null}
         />
       )}
     </div>

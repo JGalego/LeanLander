@@ -12,6 +12,10 @@ flowchart LR
   Commands --> Toolchain[Elan service]
   Commands --> Build[Lake service]
   Commands --> Server[Lean server manager]
+  Commands --> Doctor[Lean Doctor]
+  Doctor --> Toolchain
+  Doctor --> Build
+  Doctor --> Server
   Server <--> LSP[Lean LSP and infoview RPC]
 ```
 
@@ -19,7 +23,7 @@ No UI component should construct a shell command. Native operations accept struc
 
 ## Current Boundary
 
-Narrowly scoped Rust commands own project discovery, source loading and saving, recent-project history, Elan and Lake operations, and Lean server communication. Frontend clients own structured `invoke` calls, while `ProjectGateway` isolates native folder dialogs. Browser mode keeps the deterministic sample workspace active without claiming native services are available.
+Narrowly scoped Rust commands own project discovery, source loading and saving, recent-project history, Elan and Lake operations, Lean server communication, and environment diagnosis. Frontend clients own structured `invoke` calls, while `ProjectGateway` isolates native folder dialogs. Browser mode keeps the deterministic sample workspace active without claiming native services are available.
 
 Project discovery performs one bounded scan, ignores generated and dependency directories, and never follows symlinks. Later reads and writes accept only existing relative `.lean` paths whose canonical targets remain inside the selected project. Recent paths are stored in Tauri's application data directory.
 
@@ -49,14 +53,20 @@ One long-lived server process is owned per open workspace. The manager launches 
 
 Diagnostics, hover, completion, definitions, references, and symbols use standard LSP messages. Proof state connects to Lean's existing infoview session and calls `Lean.Widget.getInteractiveGoals`; a native compatibility adapter strips rich RPC tags into the stable UI model and falls back to `$/lean/plainGoal` when interactive RPC is unavailable.
 
+### Lean Doctor
+
+Lean Doctor is a read-only aggregator over the project, Elan, Lake, and server services. Its summary checks Elan discovery, the selected toolchain, bounded Lean and Lake version probes, the Lake manifest and latest dependency operation, and the managed server state. It does not install, update, build, or restart anything while diagnosing.
+
+Repairs are explicit and allowlisted. Runnable actions delegate to the existing managed toolchain installation, Lake update, or server restart flows; manual repairs provide guidance without executing shell text. Detailed environment facts and bounded Lake or server output use a separate command and are not requested until the user opens the details disclosure.
+
 ## Process And Error Model
 
-Native process results will keep two representations:
+Native process results keep two representations:
 
 - A user-facing category, summary, and suggested recovery action.
 - A debug record containing executable, argument array, selected non-secret environment, exit status, stdout, stderr, and elapsed time.
 
-Secrets and unrelated environment values will not be logged. Cancellation will terminate the owned child process and descendants using platform-specific implementations behind one interface.
+Secrets and unrelated environment values are not collected. Diagnostic details include local project paths and therefore remain hidden by default with an in-product sharing warning. Cancellation terminates the owned child process through the service that started it.
 
 ## Cross-Platform Strategy
 
@@ -72,4 +82,4 @@ The project toolchain file selects Lean. Server capabilities are captured from t
 
 ## Testing Layers
 
-Frontend unit tests cover service boundaries, workspace transitions, editor adapters, dialog keyboard behavior, error/loading states, and proof rendering. Rust unit tests cover project detection, executable discovery, command construction, process state transitions, JSON-RPC framing, and proof response parsing. Opt-in native integration tests use temporary projects and installed toolchains so the default suite remains fast and offline.
+Frontend unit tests cover service boundaries, workspace transitions, editor adapters, dialog keyboard behavior, Doctor repairs and lazy details, error/loading states, and proof rendering. Rust unit tests cover project detection, executable discovery, diagnostic classification, bounded logs, command construction, process state transitions, JSON-RPC framing, and proof response parsing. Opt-in native integration tests use temporary projects and installed toolchains so the default suite remains fast and offline.

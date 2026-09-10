@@ -114,6 +114,15 @@ impl ServerManager {
         }
     }
 
+    pub fn diagnostic_log(&self, project_path: &Path) -> ServiceResult<Vec<String>> {
+        let root = canonical_project_root(project_path)?;
+        let servers = self.servers.lock().map_err(server_lock_error)?;
+        match servers.get(&root) {
+            Some(connection) => connection.debug_lines(),
+            None => Ok(Vec::new()),
+        }
+    }
+
     pub fn stop(&self, project_path: &Path) -> ServiceResult<()> {
         let root = canonical_project_root(project_path)?;
         let connection = self
@@ -587,10 +596,14 @@ impl ServerConnection {
     }
 
     fn debug_tail(&self) -> String {
+        self.debug_lines().unwrap_or_default().join("\n")
+    }
+
+    fn debug_lines(&self) -> ServiceResult<Vec<String>> {
         self.stderr_log
             .lock()
-            .map(|lines| lines.iter().cloned().collect::<Vec<_>>().join("\n"))
-            .unwrap_or_default()
+            .map(|lines| lines.iter().cloned().collect())
+            .map_err(server_lock_error)
     }
 }
 
