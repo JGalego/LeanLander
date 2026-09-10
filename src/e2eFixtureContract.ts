@@ -92,4 +92,18 @@ export interface E2eFixture {
       details: string | null
     } | null
   }
+  lakeBuildProgress?: {
+    operation: 'build'
+    stage: string
+    message: string
+    running: boolean
+    succeeded: boolean | null
+    projectPath: string | null
+    failure: {
+      category: string
+      summary: string
+      suggestion: string
+      details: string | null
+    } | null
+  }
 }

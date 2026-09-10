@@ -107,21 +107,23 @@ export function installE2eHarness() {
       case 'create_lake_project':
       case 'fetch_lake_dependencies':
       case 'build_lake_project':
-        lakeProgress = {
-          operation: command === 'create_lake_project'
-            ? 'create'
-            : command === 'fetch_lake_dependencies'
-              ? 'fetch'
-              : 'build',
-          stage: 'complete',
-          message: command === 'build_lake_project'
-            ? 'Build completed'
-            : 'Dependencies are up to date',
-          running: false,
-          succeeded: true,
-          projectPath: fixture.project.metadata.path,
-          failure: null,
-        }
+        lakeProgress = command === 'build_lake_project' && fixture.lakeBuildProgress
+          ? fixture.lakeBuildProgress
+          : {
+            operation: command === 'create_lake_project'
+              ? 'create'
+              : command === 'fetch_lake_dependencies'
+                ? 'fetch'
+                : 'build',
+            stage: 'complete',
+            message: command === 'build_lake_project'
+              ? 'Build completed'
+              : 'Dependencies are up to date',
+            running: false,
+            succeeded: true,
+            projectPath: fixture.project.metadata.path,
+            failure: null,
+          }
         return null
       case 'lake_operation_progress':
         return lakeProgress

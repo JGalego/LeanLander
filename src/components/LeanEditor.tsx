@@ -70,6 +70,22 @@ export function LeanEditor({
       applyLeanDiagnostics(monacoInstance, model, diagnostics)
     }
 
+    if (import.meta.env.MODE === 'e2e') {
+      const revealLine = (event: Event) => {
+        const lineNumber = (event as CustomEvent<{ lineNumber?: number }>).detail?.lineNumber
+        if (typeof lineNumber !== 'number') {
+          return
+        }
+        editor.setPosition({ lineNumber, column: 1 })
+        editor.revealLineInCenter(lineNumber, monaco.editor.ScrollType.Smooth)
+        editor.focus()
+      }
+      window.addEventListener('leanlander:e2e-reveal-line', revealLine)
+      editor.onDidDispose(() => {
+        window.removeEventListener('leanlander:e2e-reveal-line', revealLine)
+      })
+    }
+
     if (file.id === 'main') {
       editor.setPosition({ lineNumber: 8, column: 15 })
       onCursorChange(8, 15)

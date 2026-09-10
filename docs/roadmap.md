@@ -57,3 +57,11 @@
 - [x] Exercise accessibility and keyboard workflows
 - [x] Add end-to-end tests with temporary Lean projects
 - [x] Profile startup and editor memory use
+
+## Trial by Fire: Proof Corpora
+
+- [x] Pin and inspect OpenAI's Navier-Stokes and Euler formalization
+- [x] Pin and inspect Anthropic's Fermat's Last Theorem formalization
+- [x] Pin and inspect the PFR community formalization
+- [x] Record deterministic source and proof-state walkthroughs
+- [x] Publish optimized GIFs with source integrity checks and attribution

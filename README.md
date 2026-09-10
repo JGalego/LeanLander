@@ -18,6 +18,12 @@ LeanLander is a focused, cross-platform desktop IDE for Lean 4. It aims to make 
 
 The project has completed **Milestone 7**: LeanLander provides cross-platform installer builds, version-tagged releases with checksums, temporary-project browser workflows, WCAG A/AA automation, and reproducible startup and editor-memory profiling. Lean Doctor reports Elan, toolchain, Lean, Lake, dependency, and server health, offers only explicit managed repairs, and keeps bounded process details hidden until requested. LeanLander can also create Lean or Mathlib Lake projects, optionally initialize Git, update dependencies, and run builds with progress, cancellation, and actionable failure messages. Real projects use one managed Lean server per workspace for document synchronization, diagnostics, language features, and cursor-position proof states. The bundled sample remains deterministic and works without native tools.
 
+## Proof Corpus Walkthroughs
+
+[![LeanLander navigating OpenAI's Navier-Stokes and Euler formalization](docs/assets/demos/openai-navier-stokes-euler.gif)](docs/demos.md)
+
+Reproducible scripted sessions navigate pinned source from OpenAI's Navier-Stokes and Euler project, Anthropic's Fermat's Last Theorem project, and the PFR community formalization. See [docs/demos.md](docs/demos.md) for all recordings, exact commits, integrity checks, attribution, and the distinction between deterministic proof-state fixtures and live upstream builds.
+
 ## Getting Started
 
 Start from a local clone of this repository. All platforms require [Node.js](https://nodejs.org/) `^20.19.0` or `>=22.12.0`, npm, and [Rust via rustup](https://www.rust-lang.org/tools/install).
@@ -78,8 +84,9 @@ src-tauri/
   src/              Native application entry points
 docs/
   architecture.md   System boundaries and integration strategy
+  demos.md          Pinned proof-corpus walkthroughs and attribution
   releasing.md      Release signing and performance baseline
   roadmap.md        Milestone status and next work
 ```
 
-See [docs/architecture.md](docs/architecture.md) for design decisions, [docs/releasing.md](docs/releasing.md) for distribution details, and [docs/roadmap.md](docs/roadmap.md) for the implementation sequence.
+See [docs/architecture.md](docs/architecture.md) for design decisions, [docs/demos.md](docs/demos.md) for proof-corpus recordings, [docs/releasing.md](docs/releasing.md) for distribution details, and [docs/roadmap.md](docs/roadmap.md) for the implementation sequence.
