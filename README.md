@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="src/assets/leanlander-mark.svg" width="144" alt="LeanLander logo: a turnstile whose stem tapers to a blade point">
+  <img src="src/assets/leanlander-mark.svg" width="144" alt="LeanLander logo: a ridge of two folded planes, lit along its crest">
 </p>
 
 <h1 align="center">LeanLander</h1>

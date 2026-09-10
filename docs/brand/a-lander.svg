@@ -1,7 +1,0 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" fill="currentColor" role="img" aria-label="LeanLander">
-  <g transform="translate(0 14)">
-    <rect x="232" y="116" width="48" height="38" rx="13"/>
-    <path d="M206 150h100a14 14 0 0 1 13 9l20 88a14 14 0 0 1-13 17H186a14 14 0 0 1-13-17l20-88a14 14 0 0 1 13-9Z"/>
-    <path d="M198 258 152 350H120M314 258 360 350h32" fill="none" stroke="currentColor" stroke-width="34" stroke-linecap="round" stroke-linejoin="round"/>
-  </g>
-</svg>

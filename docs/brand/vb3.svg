@@ -1,5 +1,5 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-labelledby="t d">
-  <title id="t">LeanLander</title><desc id="d">A ridge of two folded planes, lit along its crest.</desc>
+  <title id="t">LeanLander</title><desc id="d">Two planes folded along a lit ridge.</desc>
   <defs>
   <linearGradient id="tile" x1="40" y1="0" x2="472" y2="512" gradientUnits="userSpaceOnUse">
     <stop offset="0" stop-color="#14ab8b"/><stop offset=".52" stop-color="#08715e"/><stop offset="1" stop-color="#03443a"/>
