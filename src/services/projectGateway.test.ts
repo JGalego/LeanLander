@@ -18,7 +18,23 @@ describe('projectGateway', () => {
     mockedIsTauri.mockReturnValue(false)
 
     await expect(projectGateway.chooseProject()).resolves.toBeNull()
+    await expect(projectGateway.chooseProjectParent()).resolves.toBeNull()
     expect(mockedOpen).not.toHaveBeenCalled()
+  })
+
+  it('chooses a parent directory for a new project', async () => {
+    mockedIsTauri.mockReturnValue(true)
+    mockedOpen.mockResolvedValue('/home/ada/Lean Projects')
+
+    await expect(projectGateway.chooseProjectParent()).resolves.toEqual({
+      name: 'Lean Projects',
+      path: '/home/ada/Lean Projects',
+    })
+    expect(mockedOpen).toHaveBeenCalledWith({
+      directory: true,
+      multiple: false,
+      title: 'Choose where to create the project',
+    })
   })
 
   it('returns the selected project without shell parsing', async () => {

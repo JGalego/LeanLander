@@ -19,7 +19,7 @@ No UI component should construct a shell command. Native operations accept struc
 
 ## Current Boundary
 
-Narrowly scoped Rust commands own project discovery, source loading and saving, recent-project history, Elan operations, and Lean server communication. Frontend clients own structured `invoke` calls, while `ProjectGateway` isolates the native folder dialog. Browser mode keeps the deterministic sample workspace active without claiming native services are available.
+Narrowly scoped Rust commands own project discovery, source loading and saving, recent-project history, Elan and Lake operations, and Lean server communication. Frontend clients own structured `invoke` calls, while `ProjectGateway` isolates native folder dialogs. Browser mode keeps the deterministic sample workspace active without claiming native services are available.
 
 Project discovery performs one bounded scan, ignores generated and dependency directories, and never follows symlinks. Later reads and writes accept only existing relative `.lean` paths whose canonical targets remain inside the selected project. Recent paths are stored in Tauri's application data directory.
 
@@ -41,7 +41,7 @@ When Elan is absent, LeanLander presents manual installation guidance rather tha
 
 ### Lake and build service
 
-Lake remains the package and build authority. LeanLander will invoke known Lake operations directly, capture stdout and stderr separately, and translate common failures into actionable messages. Arbitrary project-provided commands will not run silently.
+Lake remains the package and build authority. LeanLander creates the CLI-supported `std` and `math` templates, optionally initializes Git, and runs dependency updates and builds through the project-selected toolchain. Each operation has one owned child process, bounded output capture, structured progress, and operation-scoped cancellation so a late cancellation cannot replace a successful result. Network, dependency, build, Git, process, and configuration failures become actionable messages. Arbitrary project-provided commands do not run silently.
 
 ### Lean server manager
 
@@ -72,4 +72,4 @@ The project toolchain file selects Lean. Server capabilities are captured from t
 
 ## Testing Layers
 
-Frontend unit tests cover service boundaries, workspace transitions, editor adapters, error/loading states, and proof rendering. Rust unit tests cover project detection, executable discovery, command construction, JSON-RPC framing, and proof response parsing. An opt-in native integration test uses a temporary project and installed toolchain so the default suite remains fast and offline.
+Frontend unit tests cover service boundaries, workspace transitions, editor adapters, dialog keyboard behavior, error/loading states, and proof rendering. Rust unit tests cover project detection, executable discovery, command construction, process state transitions, JSON-RPC framing, and proof response parsing. Opt-in native integration tests use temporary projects and installed toolchains so the default suite remains fast and offline.

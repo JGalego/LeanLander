@@ -605,6 +605,236 @@
   color: #c5d3cc;
 }
 
+.status-cancel {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 1px 5px;
+  color: #f5f8f6;
+  font-size: 10px;
+  background: transparent;
+  border: 1px solid rgb(255 255 255 / 28%);
+  border-radius: 3px;
+  cursor: pointer;
+}
+
+.dialog-backdrop {
+  position: fixed;
+  z-index: 20;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 20px;
+  background: rgb(21 31 26 / 42%);
+}
+
+.new-project-dialog {
+  width: min(430px, 100%);
+  overflow: hidden;
+  background: var(--surface-raised);
+  border: 1px solid var(--line-strong);
+  border-radius: 7px;
+  box-shadow: 0 18px 55px rgb(20 32 26 / 24%);
+}
+
+.dialog-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 50px;
+  padding: 0 12px 0 16px;
+  border-bottom: 1px solid var(--line);
+}
+
+.dialog-header > div {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.dialog-header h2 {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 650;
+}
+
+.icon-button {
+  display: grid;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  place-items: center;
+  color: var(--muted);
+  background: transparent;
+  border: 0;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.icon-button:hover {
+  color: var(--ink);
+  background: var(--sidebar);
+}
+
+.new-project-form {
+  display: grid;
+  gap: 9px;
+  padding: 16px;
+}
+
+.field-label {
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 650;
+  text-transform: uppercase;
+}
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.field-error {
+  margin: -3px 0 2px;
+  color: #9f2f27;
+  font-size: 11px;
+}
+
+.text-field,
+.location-field {
+  min-width: 0;
+  min-height: 34px;
+  padding: 7px 9px;
+  color: var(--ink);
+  font: 12px/1.5 var(--mono);
+  background: #f8faf6;
+  border: 1px solid var(--line-strong);
+  border-radius: 4px;
+}
+
+.text-field:focus {
+  border-color: var(--accent);
+  outline: 2px solid var(--accent-soft);
+  outline-offset: 0;
+}
+
+.location-field {
+  overflow: hidden;
+  color: var(--muted);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.template-fieldset {
+  min-width: 0;
+  margin: 5px 0 0;
+  padding: 0;
+  border: 0;
+}
+
+.template-fieldset legend {
+  margin-bottom: 7px;
+}
+
+.segmented-control {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  overflow: hidden;
+  border: 1px solid var(--line-strong);
+  border-radius: 5px;
+}
+
+.segmented-control label {
+  position: relative;
+  min-width: 0;
+  cursor: pointer;
+}
+
+.segmented-control label + label {
+  border-left: 1px solid var(--line-strong);
+}
+
+.segmented-control input {
+  position: absolute;
+  opacity: 0;
+}
+
+.segmented-control span {
+  display: grid;
+  min-height: 35px;
+  padding: 0 8px;
+  place-items: center;
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.segmented-control input:checked + span {
+  color: var(--accent-ink);
+  font-weight: 600;
+  background: var(--accent-soft);
+}
+
+.segmented-control input:focus-visible + span {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+.checkbox-field {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 30px;
+  color: var(--muted);
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.checkbox-field input {
+  accent-color: var(--accent);
+}
+
+.dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 7px;
+  margin: 8px -16px -16px;
+  padding: 11px 16px;
+  background: var(--sidebar);
+  border-top: 1px solid var(--line);
+}
+
+.dialog-button {
+  min-height: 31px;
+  padding: 0 11px;
+  font-size: 11px;
+  font-weight: 600;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.dialog-button--secondary {
+  color: var(--ink);
+  background: var(--surface-raised);
+  border: 1px solid var(--line-strong);
+}
+
+.dialog-button--primary {
+  color: #fff;
+  background: var(--accent);
+  border: 1px solid var(--accent);
+}
+
+.dialog-button:disabled {
+  opacity: 0.48;
+  cursor: default;
+}
+
 .spin {
   animation: spin 850ms linear infinite;
 }

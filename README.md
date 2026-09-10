@@ -7,7 +7,7 @@
 <p align="center"><strong>There can be only one... Lean IDE.</strong></p>
 
 <p align="center">
-  <img alt="Status: Milestone 4" src="https://img.shields.io/badge/status-milestone%204-68717d">
+  <img alt="Status: Milestone 5" src="https://img.shields.io/badge/status-milestone%205-68717d">
   <img alt="Tauri 2" src="https://img.shields.io/badge/Tauri-2-24c8db?logo=tauri&logoColor=white">
   <img alt="React 19" src="https://img.shields.io/badge/React-19-087ea4?logo=react&logoColor=white">
   <a href="https://github.com/JGalego/LeanLander/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/JGalego/LeanLander/actions/workflows/ci.yml/badge.svg"></a>
@@ -16,7 +16,7 @@
 
 LeanLander is a focused, cross-platform desktop IDE for Lean 4. It aims to make opening a project and proving feel immediate, without asking users to become experts in Elan, Lake, or editor configuration first.
 
-The project is currently at **Milestone 4**: real projects use one managed Lean server per workspace for document synchronization, diagnostics, language features, and cursor-position proof states. The bundled sample remains deterministic and works without native tools.
+The project is currently at **Milestone 5**: LeanLander can create Lean or Mathlib Lake projects, optionally initialize Git, update dependencies, and run builds with progress, cancellation, and actionable failure messages. Real projects also use one managed Lean server per workspace for document synchronization, diagnostics, language features, and cursor-position proof states. The bundled sample remains deterministic and works without native tools.
 
 ## Getting Started
 

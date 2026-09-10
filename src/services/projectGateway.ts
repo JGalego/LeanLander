@@ -8,6 +8,7 @@ export interface ProjectSelection {
 
 export interface ProjectGateway {
   chooseProject(): Promise<ProjectSelection | null>
+  chooseProjectParent(): Promise<ProjectSelection | null>
 }
 
 export function projectNameFromPath(path: string): string {
@@ -16,24 +17,32 @@ export function projectNameFromPath(path: string): string {
 }
 
 export const projectGateway: ProjectGateway = {
-  async chooseProject() {
-    if (!isTauri()) {
-      return null
-    }
-
-    const selectedPath = await open({
-      directory: true,
-      multiple: false,
-      title: 'Open a Lean project',
-    })
-
-    if (typeof selectedPath !== 'string') {
-      return null
-    }
-
-    return {
-      name: projectNameFromPath(selectedPath),
-      path: selectedPath,
-    }
+  chooseProject() {
+    return chooseDirectory('Open a Lean project')
   },
+
+  chooseProjectParent() {
+    return chooseDirectory('Choose where to create the project')
+  },
+}
+
+async function chooseDirectory(title: string): Promise<ProjectSelection | null> {
+  if (!isTauri()) {
+    return null
+  }
+
+  const selectedPath = await open({
+    directory: true,
+    multiple: false,
+    title,
+  })
+
+  if (typeof selectedPath !== 'string') {
+    return null
+  }
+
+  return {
+    name: projectNameFromPath(selectedPath),
+    path: selectedPath,
+  }
 }

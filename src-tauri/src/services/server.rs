@@ -1,6 +1,6 @@
 use super::{
     project::{canonical_project_root, resolve_project_file},
-    toolchain::{find_elan, inspect, validate_toolchain_name},
+    toolchain::{find_elan, select_toolchain},
     ServiceError, ServiceResult,
 };
 use serde::{Deserialize, Serialize};
@@ -630,22 +630,6 @@ impl ProofCompatibilityAdapter {
             }
         }
     }
-}
-
-fn select_toolchain(required_toolchain: Option<&str>) -> ServiceResult<String> {
-    if let Some(toolchain) = required_toolchain {
-        validate_toolchain_name(toolchain)?;
-        return Ok(toolchain.to_owned());
-    }
-
-    inspect(None)?.active_toolchain.ok_or_else(|| {
-        ServiceError::new(
-            "missing-toolchain",
-            "No active Lean toolchain was found.",
-            "Select a project with a lean-toolchain file or configure an Elan default.",
-            None,
-        )
-    })
 }
 
 fn server_arguments(root: &Path, toolchain: &str) -> Vec<String> {

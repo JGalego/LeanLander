@@ -38,10 +38,10 @@
 
 ## Milestone 5: Lake And Project Creation
 
-- [ ] Create Lean and Lean + Mathlib projects
-- [ ] Optionally initialize Git
-- [ ] Fetch dependencies with progress and cancellation
-- [ ] Build projects and translate common failures
+- [x] Create Lean and Lean + Mathlib projects
+- [x] Optionally initialize Git
+- [x] Fetch dependencies with progress and cancellation
+- [x] Build projects and translate common failures
 
 ## Milestone 6: Lean Doctor
 

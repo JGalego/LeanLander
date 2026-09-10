@@ -1,12 +1,24 @@
-import { lazy, startTransition, Suspense, useEffect, useRef, useState } from 'react'
+import {
+  lazy,
+  startTransition,
+  Suspense,
+  useEffect,
+  useEffectEvent,
+  useRef,
+  useState,
+} from 'react'
 import {
   Circle,
   FileCode2,
+  FolderPlus,
   FolderOpen,
   Hammer,
   LoaderCircle,
+  RefreshCw,
   Save,
+  X,
 } from 'lucide-react'
+import { NewProjectDialog, type NewProjectValues } from './components/NewProjectDialog'
 import { ProjectSidebar } from './components/ProjectSidebar'
 import { ProofPanel } from './components/ProofPanel'
 import {
@@ -22,6 +34,12 @@ import {
   type LspDiagnostic,
   type ServerStatus,
 } from './services/languageClient'
+import {
+  idleLakeProgress,
+  lakeClient,
+  type LakeClient,
+  type LakeProgress,
+} from './services/lakeClient'
 import {
   errorSummary,
   projectClient,
@@ -52,6 +70,7 @@ interface AppProps {
   client?: ProjectClient
   gateway?: ProjectGateway
   language?: LanguageClient
+  lake?: LakeClient
   toolchains?: ToolchainClient
 }
 
@@ -65,6 +84,7 @@ function App({
   client = projectClient,
   gateway = projectGateway,
   language = languageClient,
+  lake = lakeClient,
   toolchains = toolchainClient,
 }: AppProps) {
   const [project, setProject] = useState(sampleWorkspace)
@@ -76,17 +96,22 @@ function App({
   const [dirtyFileIds, setDirtyFileIds] = useState<string[]>([])
   const [cursor, setCursor] = useState({ lineNumber: 8, column: 15 })
   const [isOpening, setIsOpening] = useState(false)
+  const [isChoosingParent, setIsChoosingParent] = useState(false)
+  const [isStartingLake, setIsStartingLake] = useState(false)
   const [isSaving, setIsSaving] = useState(false)
   const [isSample, setIsSample] = useState(true)
   const [statusMessage, setStatusMessage] = useState('Ready')
   const [toolchainStatus, setToolchainStatus] = useState(checkingToolchainStatus)
   const [installProgress, setInstallProgress] = useState<InstallProgress | null>(null)
+  const [lakeProgress, setLakeProgress] = useState<LakeProgress | null>(null)
+  const [newProjectParent, setNewProjectParent] = useState<string | null>(null)
   const [serverStatus, setServerStatus] = useState<ServerStatus>(offlineServerStatus)
   const [nativeProofState, setNativeProofState] = useState<ProofState>(noProofState)
   const [diagnostics, setDiagnostics] = useState<LspDiagnostic[]>([])
   const [syncedDocument, setSyncedDocument] = useState<string | null>(null)
   const documentVersions = useRef(new Map<string, number>())
   const serverLeases = useRef(new Map<string, number>())
+  const projectLoadGeneration = useRef(0)
 
   const activeFile = files.find((file) => file.id === activeFileId) ?? files[0] ?? null
   const activeFilePath = activeFile?.path ?? null
@@ -96,12 +121,37 @@ function App({
   const proofState = isSample
     ? proofStateAt(activeFile?.id ?? '', cursor.lineNumber)
     : nativeProofState
+  const shouldPollLake = Boolean(lakeProgress?.running)
+
+  const receiveLakeProgress = useEffectEvent(async (progress: LakeProgress) => {
+    setLakeProgress(progress)
+    setStatusMessage(
+      progress.failure
+        ? `${progress.failure.summary} ${progress.failure.suggestion}`
+        : progress.message,
+    )
+
+    if (progress.succeeded && progress.operation === 'create' && progress.projectPath) {
+      try {
+        const opened = await loadProject(progress.projectPath)
+        if (!opened) {
+          return
+        }
+      } catch (error) {
+        setStatusMessage(`Project created. ${errorSummary(error)}`)
+      }
+    }
+  })
 
   useEffect(() => {
     void client.recentProjects()
       .then(setRecentProjects)
       .catch(() => undefined)
   }, [client])
+
+  useEffect(() => () => {
+    projectLoadGeneration.current += 1
+  }, [])
 
   useEffect(() => {
     let isCurrent = true
@@ -278,6 +328,40 @@ function App({
     }
   }, [activeFilePath, cursor, isSample, language, project.path, serverStatus.state, syncedDocument])
 
+  useEffect(() => {
+    if (!shouldPollLake) {
+      return
+    }
+
+    let isCurrent = true
+    let timeout: number | undefined
+    const poll = async () => {
+      try {
+        const progress = await lake.progress()
+        if (!isCurrent) {
+          return
+        }
+        await receiveLakeProgress(progress)
+        if (isCurrent && progress.running) {
+          timeout = window.setTimeout(poll, 300)
+        }
+      } catch (error) {
+        if (isCurrent) {
+          setLakeProgress(null)
+          setStatusMessage(errorSummary(error))
+        }
+      }
+    }
+    void poll()
+
+    return () => {
+      isCurrent = false
+      if (timeout !== undefined) {
+        window.clearTimeout(timeout)
+      }
+    }
+  }, [lake, shouldPollLake])
+
   function selectFile(fileId: string) {
     setOpenFileIds((current) =>
       current.includes(fileId) ? current : [...current, fileId],
@@ -307,7 +391,20 @@ function App({
   }
 
   async function loadProject(path: string) {
-    const discovered = await client.discoverProject(path)
+    const generation = projectLoadGeneration.current + 1
+    projectLoadGeneration.current = generation
+    let discovered
+    try {
+      discovered = await client.discoverProject(path)
+    } catch (error) {
+      if (projectLoadGeneration.current !== generation) {
+        return false
+      }
+      throw error
+    }
+    if (projectLoadGeneration.current !== generation) {
+      return false
+    }
     const firstFileId = discovered.files[0]?.id ?? ''
 
     startTransition(() => {
@@ -345,10 +442,16 @@ function App({
     })
 
     try {
-      setRecentProjects(await client.recentProjects())
+      const recent = await client.recentProjects()
+      if (projectLoadGeneration.current === generation) {
+        setRecentProjects(recent)
+      }
     } catch {
-      setRecentProjects([])
+      if (projectLoadGeneration.current === generation) {
+        setRecentProjects([])
+      }
     }
+    return true
   }
 
   async function openProject() {
@@ -443,6 +546,115 @@ function App({
     }
   }
 
+  async function chooseNewProjectParent() {
+    setIsChoosingParent(true)
+    setStatusMessage('Choosing a project location…')
+
+    try {
+      const selection = await gateway.chooseProjectParent()
+      if (selection) {
+        setNewProjectParent(selection.path)
+        setStatusMessage('Ready to create project')
+      } else {
+        setStatusMessage('No project location selected')
+      }
+    } catch (error) {
+      setStatusMessage(errorSummary(error))
+    } finally {
+      setIsChoosingParent(false)
+    }
+  }
+
+  async function createProject(values: NewProjectValues) {
+    if (!newProjectParent) {
+      return
+    }
+    const parentPath = newProjectParent
+    setNewProjectParent(null)
+    setIsStartingLake(true)
+    setStatusMessage(`Creating ${values.name}…`)
+
+    try {
+      await lake.create({
+        parentPath,
+        ...values,
+        toolchain: toolchainStatus.requiredToolchain ?? toolchainStatus.activeToolchain,
+      })
+      setLakeProgress({
+        ...idleLakeProgress,
+        operation: 'create',
+        stage: 'creating',
+        message: `Creating ${values.name}`,
+        running: true,
+      })
+    } catch (error) {
+      setLakeProgress(null)
+      setStatusMessage(errorSummary(error))
+    } finally {
+      setIsStartingLake(false)
+    }
+  }
+
+  async function fetchDependencies() {
+    setIsStartingLake(true)
+    setStatusMessage('Updating project dependencies…')
+
+    try {
+      await lake.fetch(project.path, projectMetadata?.leanToolchain ?? null)
+      setLakeProgress({
+        ...idleLakeProgress,
+        operation: 'fetch',
+        stage: 'fetching',
+        message: 'Updating project dependencies',
+        running: true,
+        projectPath: project.path,
+      })
+    } catch (error) {
+      setLakeProgress(null)
+      setStatusMessage(errorSummary(error))
+    } finally {
+      setIsStartingLake(false)
+    }
+  }
+
+  async function buildProject() {
+    setIsStartingLake(true)
+    setStatusMessage('Building project…')
+
+    try {
+      await lake.build(project.path, projectMetadata?.leanToolchain ?? null)
+      setLakeProgress({
+        ...idleLakeProgress,
+        operation: 'build',
+        stage: 'building',
+        message: 'Building project',
+        running: true,
+        projectPath: project.path,
+      })
+    } catch (error) {
+      setLakeProgress(null)
+      setStatusMessage(errorSummary(error))
+    } finally {
+      setIsStartingLake(false)
+    }
+  }
+
+  async function cancelLakeOperation() {
+    try {
+      await lake.cancel()
+      const progress = await lake.progress()
+      setLakeProgress(progress)
+      setStatusMessage(progress.message)
+    } catch (error) {
+      setStatusMessage(errorSummary(error))
+    }
+  }
+
+  const lakeRunning = isStartingLake || Boolean(lakeProgress?.running)
+  const hasLakeProject = !isSample && Boolean(projectMetadata?.lakefile)
+  const canCreateProject = toolchainStatus.state === 'ready' && !lakeRunning
+  const canRunLake = hasLakeProject && !lakeRunning
+
   return (
     <div className="app-shell">
       <header className="topbar">
@@ -457,6 +669,20 @@ function App({
         </div>
 
         <nav aria-label="Project actions" className="topbar-actions">
+          <button
+            className="toolbar-button"
+            disabled={!canCreateProject || isChoosingParent}
+            onClick={chooseNewProjectParent}
+            title={canCreateProject ? 'Create project' : 'A ready Lean toolchain is required'}
+            type="button"
+          >
+            {isChoosingParent ? (
+              <LoaderCircle aria-hidden="true" className="spin" size={15} />
+            ) : (
+              <FolderPlus aria-hidden="true" size={15} />
+            )}
+            New project
+          </button>
           <button className="toolbar-button" disabled={isOpening} onClick={openProject} type="button">
             {isOpening ? (
               <LoaderCircle aria-hidden="true" className="spin" size={15} />
@@ -485,7 +711,23 @@ function App({
             )}
             Save
           </button>
-          <button className="toolbar-button" disabled title="Lake build integration is planned" type="button">
+          <button
+            className="toolbar-button"
+            disabled={!canRunLake}
+            onClick={fetchDependencies}
+            title={hasLakeProject ? 'Update dependencies' : 'Open a Lake project to update dependencies'}
+            type="button"
+          >
+            <RefreshCw aria-hidden="true" size={15} />
+            Update
+          </button>
+          <button
+            className="toolbar-button"
+            disabled={!canRunLake || dirtyFileIds.length > 0}
+            onClick={buildProject}
+            title={dirtyFileIds.length > 0 ? 'Save changes before building' : 'Build project'}
+            type="button"
+          >
             <Hammer aria-hidden="true" size={15} />
             Build
           </button>
@@ -575,6 +817,16 @@ function App({
         <div className="status-item">
           <Circle aria-hidden="true" className="status-dot status-dot--ready" fill="currentColor" size={7} />
           <span aria-live="polite">{statusMessage}</span>
+          {lakeRunning && (
+            <button
+              className="status-cancel"
+              onClick={cancelLakeOperation}
+              type="button"
+            >
+              <X aria-hidden="true" size={11} />
+              Cancel
+            </button>
+          )}
         </div>
         <div className="status-meta">
           <span>Spaces: 2</span>
@@ -582,6 +834,14 @@ function App({
           <span>Lean 4</span>
         </div>
       </footer>
+
+      {newProjectParent && (
+        <NewProjectDialog
+          onCancel={() => setNewProjectParent(null)}
+          onCreate={createProject}
+          parentPath={newProjectParent}
+        />
+      )}
     </div>
   )
 }

@@ -268,6 +268,22 @@ pub fn find_elan() -> Option<PathBuf> {
     elan_candidates().into_iter().find(|path| path.is_file())
 }
 
+pub(crate) fn select_toolchain(required_toolchain: Option<&str>) -> ServiceResult<String> {
+    if let Some(toolchain) = required_toolchain {
+        validate_toolchain_name(toolchain)?;
+        return Ok(toolchain.to_owned());
+    }
+
+    inspect(None)?.active_toolchain.ok_or_else(|| {
+        ServiceError::new(
+            "missing-toolchain",
+            "No active Lean toolchain was found.",
+            "Select a project with a lean-toolchain file or configure an Elan default.",
+            None,
+        )
+    })
+}
+
 fn elan_candidates() -> Vec<PathBuf> {
     let executable = if cfg!(windows) { "elan.exe" } else { "elan" };
     let mut candidates = Vec::new();

@@ -4,6 +4,7 @@ pub mod services;
 use serde_json::Value;
 #[cfg(feature = "desktop")]
 use services::{
+    lake::{CreateProjectOptions, LakeManager, LakeProgress},
     project::{self, DiscoveredProject, ProjectFile, RecentProject},
     server::{LanguageFeature, ProofState, ServerManager, ServerStatus},
     toolchain::{self, InstallProgress, ToolchainManager, ToolchainStatus},
@@ -219,11 +220,61 @@ fn lean_proof_state(
 }
 
 #[cfg(feature = "desktop")]
+#[tauri::command]
+fn create_lake_project(
+    manager: tauri::State<'_, LakeManager>,
+    options: CreateProjectOptions,
+) -> Result<(), ServiceError> {
+    manager.start_create(options)
+}
+
+#[cfg(feature = "desktop")]
+#[tauri::command]
+fn fetch_lake_dependencies(
+    manager: tauri::State<'_, LakeManager>,
+    project_path: String,
+    required_toolchain: Option<String>,
+) -> Result<(), ServiceError> {
+    manager.start_fetch(
+        PathBuf::from(project_path).as_path(),
+        required_toolchain.as_deref(),
+    )
+}
+
+#[cfg(feature = "desktop")]
+#[tauri::command]
+fn build_lake_project(
+    manager: tauri::State<'_, LakeManager>,
+    project_path: String,
+    required_toolchain: Option<String>,
+) -> Result<(), ServiceError> {
+    manager.start_build(
+        PathBuf::from(project_path).as_path(),
+        required_toolchain.as_deref(),
+    )
+}
+
+#[cfg(feature = "desktop")]
+#[tauri::command]
+fn lake_operation_progress(
+    manager: tauri::State<'_, LakeManager>,
+) -> Result<LakeProgress, ServiceError> {
+    manager.progress()
+}
+
+#[cfg(feature = "desktop")]
+#[tauri::command]
+fn cancel_lake_operation(manager: tauri::State<'_, LakeManager>) -> Result<(), ServiceError> {
+    manager.cancel()
+}
+
+#[cfg(feature = "desktop")]
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
         .manage(ToolchainManager::default())
         .manage(ServerManager::default())
+        .manage(LakeManager::default())
         .plugin(tauri_plugin_dialog::init())
         .invoke_handler(tauri::generate_handler![
             discover_project,
@@ -241,7 +292,12 @@ pub fn run() {
             close_lean_document,
             lean_diagnostics,
             lean_language_request,
-            lean_proof_state
+            lean_proof_state,
+            create_lake_project,
+            fetch_lake_dependencies,
+            build_lake_project,
+            lake_operation_progress,
+            cancel_lake_operation
         ])
         .setup(|app| {
             if cfg!(debug_assertions) {

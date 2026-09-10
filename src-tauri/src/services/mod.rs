@@ -1,3 +1,4 @@
+pub mod lake;
 pub mod project;
 pub mod server;
 pub mod toolchain;
