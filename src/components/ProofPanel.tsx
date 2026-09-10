@@ -21,6 +21,9 @@ export function ProofPanel({
 }: ProofPanelProps) {
   const goals = proofGoals(proofState)
   const hasGoal = goals.length > 0
+  // Info and hint diagnostics (`#check`, `#eval` output) are shown on hover in the editor.
+  const listedDiagnostics = diagnostics.filter((diagnostic) => (diagnostic.severity ?? 1) <= 2)
+  const messageCount = listedDiagnostics.length + messages.length
 
   return (
     <aside aria-label="Proof state" className="proof-panel">
@@ -89,18 +92,18 @@ export function ProofPanel({
           <span>Messages</span>
         </div>
         <span>
-          {diagnostics.length + messages.length === 0
+          {messageCount === 0
             ? 'No messages'
-            : `${diagnostics.length + messages.length} message${diagnostics.length + messages.length === 1 ? '' : 's'}`}
+            : `${messageCount} message${messageCount === 1 ? '' : 's'}`}
         </span>
       </footer>
 
-      {diagnostics.length + messages.length > 0 && (
+      {messageCount > 0 && (
         <ol aria-label="Messages" className="messages-list">
-          {diagnostics.map((diagnostic, index) => (
+          {listedDiagnostics.map((diagnostic, index) => (
             <li key={`${diagnostic.range.start.line}-${diagnostic.range.start.character}-${index}`}>
               <span className={`message-severity message-severity--${diagnostic.severity ?? 1}`}>
-                {diagnostic.severity === 1 ? 'Error' : diagnostic.severity === 2 ? 'Warning' : 'Info'}
+                {diagnostic.severity === 2 ? 'Warning' : 'Error'}
               </span>
               <span>{diagnostic.message}</span>
               <small>Ln {diagnostic.range.start.line + 1}, Col {diagnostic.range.start.character + 1}</small>
