@@ -23,13 +23,16 @@ desktop = [
 ]
 
 [build-dependencies]
-tauri-build = { version = "2.6.3" }
+tauri-build = { version = "2.6.3", features = [] }
 
 [dependencies]
 serde_json = "1.0"
 serde = { version = "1.0", features = ["derive"] }
 url = "2.5"
 log = "0.4"
-tauri = { version = "2.11.3", optional = true }
+tauri = { version = "2.11.3", optional = true , features = [] }
 tauri-plugin-log = { version = "2", optional = true }
 tauri-plugin-dialog = { version = "2", optional = true }
+
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"

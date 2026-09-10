@@ -1,5 +1,6 @@
 pub mod doctor;
 pub mod lake;
+mod process;
 pub mod project;
 pub mod server;
 pub mod toolchain;

@@ -1,5 +1,5 @@
 use super::{
-    lake::{LakeManager, LakeProgress},
+    lake::{dependency_download_command, missing_dependencies, LakeManager, LakeProgress},
     project::canonical_project_root,
     server::{ServerManager, ServerStatus},
     toolchain::{self, ToolchainStatus},
@@ -427,6 +427,21 @@ fn dependency_check(root: Option<&Path>, progress: &LakeProgress, can_run: bool)
                 .map(|failure| failure.summary.clone())
                 .unwrap_or_else(|| progress.message.clone()),
             repair: Some(repair),
+        };
+    }
+    let missing = missing_dependencies(root);
+    if !missing.is_empty() {
+        // No repair: `lake update` would also move the pinned revisions.
+        return DoctorCheck {
+            id: "dependencies".to_owned(),
+            label: "Dependencies".to_owned(),
+            status: DoctorStatus::Error,
+            summary: format!(
+                "Pinned dependencies are not downloaded: {}. Run `{}` in the project folder.",
+                missing.join(", "),
+                dependency_download_command(&missing)
+            ),
+            repair: None,
         };
     }
     if root.join("lake-manifest.json").is_file() {

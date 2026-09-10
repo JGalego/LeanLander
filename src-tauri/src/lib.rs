@@ -17,364 +17,442 @@ use std::path::PathBuf;
 use tauri::{Emitter, Manager};
 
 #[cfg(feature = "desktop")]
+/// Runs service work on the blocking pool. Synchronous commands execute on the
+/// main thread, where a slow Elan call, filesystem walk, or Lean handshake
+/// freezes the whole window.
+async fn blocking<T, F>(task: F) -> Result<T, ServiceError>
+where
+    T: Send + 'static,
+    F: FnOnce() -> Result<T, ServiceError> + Send + 'static,
+{
+    tauri::async_runtime::spawn_blocking(task)
+        .await
+        .map_err(|error| {
+            ServiceError::new(
+                "internal",
+                "A background task stopped unexpectedly.",
+                "Try again, and restart LeanLander if it keeps happening.",
+                Some(error.to_string()),
+            )
+        })?
+}
+
+#[cfg(feature = "desktop")]
 #[tauri::command]
-fn discover_project(
+async fn discover_project(
     app: tauri::AppHandle,
     path: String,
 ) -> Result<DiscoveredProject, ServiceError> {
-    let mut project = project::discover_project(PathBuf::from(path).as_path())?;
-    let data_dir = app.path().app_data_dir().map_err(|error| {
-        ServiceError::new(
-            "configuration",
-            "Could not locate the LeanLander application data directory.",
-            "Check the operating system account permissions.",
-            Some(error.to_string()),
-        )
-    })?;
+    blocking(move || {
+        let mut project = project::discover_project(PathBuf::from(path).as_path())?;
+        let data_dir = app.path().app_data_dir().map_err(|error| {
+            ServiceError::new(
+                "configuration",
+                "Could not locate the LeanLander application data directory.",
+                "Check the operating system account permissions.",
+                Some(error.to_string()),
+            )
+        })?;
 
-    if let Err(error) = project::remember_project(&data_dir, &project.metadata) {
-        project.metadata.warnings.push(error.summary);
-    }
+        if let Err(error) = project::remember_project(&data_dir, &project.metadata) {
+            project.metadata.warnings.push(error.summary);
+        }
 
-    Ok(project)
+        Ok(project)
+    })
+    .await
 }
 
 #[cfg(feature = "desktop")]
 #[tauri::command]
-fn load_project_file(
+async fn load_project_file(
     project_path: String,
     relative_path: String,
 ) -> Result<ProjectFile, ServiceError> {
-    project::load_project_file(
-        PathBuf::from(project_path).as_path(),
-        PathBuf::from(relative_path).as_path(),
-    )
+    blocking(move || {
+        project::load_project_file(
+            PathBuf::from(project_path).as_path(),
+            PathBuf::from(relative_path).as_path(),
+        )
+    })
+    .await
 }
 
 #[cfg(feature = "desktop")]
 #[tauri::command]
-fn load_project_uri(project_path: String, uri: String) -> Result<ProjectFile, ServiceError> {
-    project::load_project_uri(PathBuf::from(project_path).as_path(), &uri)
+async fn load_project_uri(project_path: String, uri: String) -> Result<ProjectFile, ServiceError> {
+    blocking(move || project::load_project_uri(PathBuf::from(project_path).as_path(), &uri)).await
 }
 
 #[cfg(feature = "desktop")]
 #[tauri::command]
-fn search_project(
+async fn search_project(
     project_path: String,
     query: String,
 ) -> Result<Vec<ProjectSearchResult>, ServiceError> {
-    project::search_project(PathBuf::from(project_path).as_path(), &query)
+    blocking(move || project::search_project(PathBuf::from(project_path).as_path(), &query)).await
 }
 
 #[cfg(feature = "desktop")]
 #[tauri::command]
-fn save_project_file(
+async fn save_project_file(
     project_path: String,
     relative_path: String,
     content: String,
 ) -> Result<(), ServiceError> {
-    project::save_project_file(
-        PathBuf::from(project_path).as_path(),
-        PathBuf::from(relative_path).as_path(),
-        &content,
-    )
-}
-
-#[cfg(feature = "desktop")]
-#[tauri::command]
-fn recent_projects(app: tauri::AppHandle) -> Result<Vec<RecentProject>, ServiceError> {
-    let data_dir = app.path().app_data_dir().map_err(|error| {
-        ServiceError::new(
-            "configuration",
-            "Could not locate the LeanLander application data directory.",
-            "Check the operating system account permissions.",
-            Some(error.to_string()),
+    blocking(move || {
+        project::save_project_file(
+            PathBuf::from(project_path).as_path(),
+            PathBuf::from(relative_path).as_path(),
+            &content,
         )
-    })?;
-    project::load_recent_projects(&data_dir)
+    })
+    .await
 }
 
 #[cfg(feature = "desktop")]
 #[tauri::command]
-fn toolchain_status(required_toolchain: Option<String>) -> Result<ToolchainStatus, ServiceError> {
-    toolchain::inspect(required_toolchain.as_deref())
+async fn recent_projects(app: tauri::AppHandle) -> Result<Vec<RecentProject>, ServiceError> {
+    blocking(move || {
+        let data_dir = app.path().app_data_dir().map_err(|error| {
+            ServiceError::new(
+                "configuration",
+                "Could not locate the LeanLander application data directory.",
+                "Check the operating system account permissions.",
+                Some(error.to_string()),
+            )
+        })?;
+        project::load_recent_projects(&data_dir)
+    })
+    .await
 }
 
 #[cfg(feature = "desktop")]
 #[tauri::command]
-fn install_toolchain(
-    manager: tauri::State<'_, ToolchainManager>,
-    toolchain: String,
-) -> Result<(), ServiceError> {
-    manager.start_install(&toolchain)
+async fn toolchain_status(
+    required_toolchain: Option<String>,
+) -> Result<ToolchainStatus, ServiceError> {
+    blocking(move || toolchain::inspect(required_toolchain.as_deref())).await
 }
 
 #[cfg(feature = "desktop")]
 #[tauri::command]
-fn toolchain_install_progress(
-    manager: tauri::State<'_, ToolchainManager>,
+async fn install_toolchain(app: tauri::AppHandle, toolchain: String) -> Result<(), ServiceError> {
+    blocking(move || app.state::<ToolchainManager>().start_install(&toolchain)).await
+}
+
+#[cfg(feature = "desktop")]
+#[tauri::command]
+async fn toolchain_install_progress(
+    app: tauri::AppHandle,
 ) -> Result<InstallProgress, ServiceError> {
-    manager.progress()
+    blocking(move || app.state::<ToolchainManager>().progress()).await
 }
 
 #[cfg(feature = "desktop")]
 #[tauri::command]
-fn cancel_toolchain_install(
-    manager: tauri::State<'_, ToolchainManager>,
-) -> Result<(), ServiceError> {
-    manager.cancel()
+async fn cancel_toolchain_install(app: tauri::AppHandle) -> Result<(), ServiceError> {
+    blocking(move || app.state::<ToolchainManager>().cancel()).await
 }
 
 #[cfg(feature = "desktop")]
 #[tauri::command]
-fn start_lean_server(
-    manager: tauri::State<'_, ServerManager>,
+async fn start_lean_server(
+    app: tauri::AppHandle,
     project_path: String,
     required_toolchain: Option<String>,
 ) -> Result<ServerStatus, ServiceError> {
-    manager.start(
-        PathBuf::from(project_path).as_path(),
-        required_toolchain.as_deref(),
-    )
+    blocking(move || {
+        app.state::<ServerManager>().start(
+            PathBuf::from(project_path).as_path(),
+            required_toolchain.as_deref(),
+        )
+    })
+    .await
 }
 
 #[cfg(feature = "desktop")]
 #[tauri::command]
-fn lean_server_status(
-    manager: tauri::State<'_, ServerManager>,
+async fn lean_server_status(
+    app: tauri::AppHandle,
     project_path: String,
 ) -> Result<ServerStatus, ServiceError> {
-    manager.status(PathBuf::from(project_path).as_path())
+    blocking(move || {
+        app.state::<ServerManager>()
+            .status(PathBuf::from(project_path).as_path())
+    })
+    .await
 }
 
 #[cfg(feature = "desktop")]
 #[tauri::command]
-fn stop_lean_server(
-    manager: tauri::State<'_, ServerManager>,
-    project_path: String,
-) -> Result<(), ServiceError> {
-    manager.stop(PathBuf::from(project_path).as_path())
+async fn stop_lean_server(app: tauri::AppHandle, project_path: String) -> Result<(), ServiceError> {
+    blocking(move || {
+        app.state::<ServerManager>()
+            .stop(PathBuf::from(project_path).as_path())
+    })
+    .await
 }
 
 #[cfg(feature = "desktop")]
 #[tauri::command]
-fn sync_lean_document(
-    manager: tauri::State<'_, ServerManager>,
+async fn sync_lean_document(
+    app: tauri::AppHandle,
     project_path: String,
     relative_path: String,
     content: String,
     version: i64,
     changes: Option<Vec<DocumentChange>>,
 ) -> Result<i64, ServiceError> {
-    manager.sync_document(
-        PathBuf::from(project_path).as_path(),
-        PathBuf::from(relative_path).as_path(),
-        &content,
-        version,
-        changes,
-    )
+    blocking(move || {
+        app.state::<ServerManager>().sync_document(
+            PathBuf::from(project_path).as_path(),
+            PathBuf::from(relative_path).as_path(),
+            &content,
+            version,
+            changes,
+        )
+    })
+    .await
 }
 
 #[cfg(feature = "desktop")]
 #[tauri::command]
-fn close_lean_document(
-    manager: tauri::State<'_, ServerManager>,
+async fn close_lean_document(
+    app: tauri::AppHandle,
     project_path: String,
     relative_path: String,
 ) -> Result<(), ServiceError> {
-    manager.close_document(
-        PathBuf::from(project_path).as_path(),
-        PathBuf::from(relative_path).as_path(),
-    )
+    blocking(move || {
+        app.state::<ServerManager>().close_document(
+            PathBuf::from(project_path).as_path(),
+            PathBuf::from(relative_path).as_path(),
+        )
+    })
+    .await
 }
 
 #[cfg(feature = "desktop")]
 #[tauri::command]
-fn lean_diagnostics(
-    manager: tauri::State<'_, ServerManager>,
+async fn lean_diagnostics(
+    app: tauri::AppHandle,
     project_path: String,
     relative_path: String,
 ) -> Result<Vec<Value>, ServiceError> {
-    manager.diagnostics(
-        PathBuf::from(project_path).as_path(),
-        PathBuf::from(relative_path).as_path(),
-    )
+    blocking(move || {
+        app.state::<ServerManager>().diagnostics(
+            PathBuf::from(project_path).as_path(),
+            PathBuf::from(relative_path).as_path(),
+        )
+    })
+    .await
 }
 
 #[cfg(feature = "desktop")]
 #[tauri::command]
-fn lean_language_request(
-    manager: tauri::State<'_, ServerManager>,
+async fn lean_language_request(
+    app: tauri::AppHandle,
     project_path: String,
     relative_path: String,
     feature: LanguageFeature,
     line: u32,
     character: u32,
 ) -> Result<Value, ServiceError> {
-    manager.request_language_feature(
-        PathBuf::from(project_path).as_path(),
-        PathBuf::from(relative_path).as_path(),
-        feature,
-        line,
-        character,
-    )
+    blocking(move || {
+        app.state::<ServerManager>().request_language_feature(
+            PathBuf::from(project_path).as_path(),
+            PathBuf::from(relative_path).as_path(),
+            feature,
+            line,
+            character,
+        )
+    })
+    .await
 }
 
 #[cfg(feature = "desktop")]
 #[tauri::command]
-fn lean_proof_state(
-    manager: tauri::State<'_, ServerManager>,
+async fn lean_proof_state(
+    app: tauri::AppHandle,
     project_path: String,
     relative_path: String,
     line: u32,
     character: u32,
 ) -> Result<ProofState, ServiceError> {
-    manager.proof_state(
-        PathBuf::from(project_path).as_path(),
-        PathBuf::from(relative_path).as_path(),
-        line,
-        character,
-    )
+    blocking(move || {
+        app.state::<ServerManager>().proof_state(
+            PathBuf::from(project_path).as_path(),
+            PathBuf::from(relative_path).as_path(),
+            line,
+            character,
+        )
+    })
+    .await
 }
 
 #[cfg(feature = "desktop")]
 #[tauri::command]
-fn lean_infoview_request(
-    manager: tauri::State<'_, ServerManager>,
+async fn lean_infoview_request(
+    app: tauri::AppHandle,
     project_path: String,
     relative_path: String,
     method: String,
     params: Value,
 ) -> Result<Value, ServiceError> {
-    manager.infoview_request(
-        PathBuf::from(project_path).as_path(),
-        PathBuf::from(relative_path).as_path(),
-        &method,
-        params,
-    )
+    blocking(move || {
+        app.state::<ServerManager>().infoview_request(
+            PathBuf::from(project_path).as_path(),
+            PathBuf::from(relative_path).as_path(),
+            &method,
+            params,
+        )
+    })
+    .await
 }
 
 #[cfg(feature = "desktop")]
 #[tauri::command]
-fn lean_infoview_notification(
-    manager: tauri::State<'_, ServerManager>,
+async fn lean_infoview_notification(
+    app: tauri::AppHandle,
     project_path: String,
     relative_path: String,
     method: String,
     params: Value,
 ) -> Result<(), ServiceError> {
-    manager.infoview_notification(
-        PathBuf::from(project_path).as_path(),
-        PathBuf::from(relative_path).as_path(),
-        &method,
-        params,
-    )
+    blocking(move || {
+        app.state::<ServerManager>().infoview_notification(
+            PathBuf::from(project_path).as_path(),
+            PathBuf::from(relative_path).as_path(),
+            &method,
+            params,
+        )
+    })
+    .await
 }
 
 #[cfg(feature = "desktop")]
 #[tauri::command]
-fn create_lean_rpc_session(
-    manager: tauri::State<'_, ServerManager>,
+async fn create_lean_rpc_session(
+    app: tauri::AppHandle,
     project_path: String,
     relative_path: String,
 ) -> Result<String, ServiceError> {
-    manager.create_rpc_session(
-        PathBuf::from(project_path).as_path(),
-        PathBuf::from(relative_path).as_path(),
-    )
+    blocking(move || {
+        app.state::<ServerManager>().create_rpc_session(
+            PathBuf::from(project_path).as_path(),
+            PathBuf::from(relative_path).as_path(),
+        )
+    })
+    .await
 }
 
 #[cfg(feature = "desktop")]
 #[tauri::command]
-fn close_lean_rpc_session(
-    manager: tauri::State<'_, ServerManager>,
+async fn close_lean_rpc_session(
+    app: tauri::AppHandle,
     project_path: String,
     session_id: String,
 ) -> Result<(), ServiceError> {
-    manager.close_rpc_session(PathBuf::from(project_path).as_path(), &session_id)
+    blocking(move || {
+        app.state::<ServerManager>()
+            .close_rpc_session(PathBuf::from(project_path).as_path(), &session_id)
+    })
+    .await
 }
 
 #[cfg(feature = "desktop")]
 #[tauri::command]
-fn create_lake_project(
-    manager: tauri::State<'_, LakeManager>,
+async fn create_lake_project(
+    app: tauri::AppHandle,
     options: CreateProjectOptions,
 ) -> Result<(), ServiceError> {
-    manager.start_create(options)
+    blocking(move || app.state::<LakeManager>().start_create(options)).await
 }
 
 #[cfg(feature = "desktop")]
 #[tauri::command]
-fn fetch_lake_dependencies(
-    manager: tauri::State<'_, LakeManager>,
+async fn fetch_lake_dependencies(
+    app: tauri::AppHandle,
     project_path: String,
     required_toolchain: Option<String>,
 ) -> Result<(), ServiceError> {
-    manager.start_fetch(
-        PathBuf::from(project_path).as_path(),
-        required_toolchain.as_deref(),
-    )
+    blocking(move || {
+        app.state::<LakeManager>().start_fetch(
+            PathBuf::from(project_path).as_path(),
+            required_toolchain.as_deref(),
+        )
+    })
+    .await
 }
 
 #[cfg(feature = "desktop")]
 #[tauri::command]
-fn build_lake_project(
-    manager: tauri::State<'_, LakeManager>,
+async fn build_lake_project(
+    app: tauri::AppHandle,
     project_path: String,
     required_toolchain: Option<String>,
 ) -> Result<(), ServiceError> {
-    manager.start_build(
-        PathBuf::from(project_path).as_path(),
-        required_toolchain.as_deref(),
-    )
+    blocking(move || {
+        app.state::<LakeManager>().start_build(
+            PathBuf::from(project_path).as_path(),
+            required_toolchain.as_deref(),
+        )
+    })
+    .await
 }
 
 #[cfg(feature = "desktop")]
 #[tauri::command]
-fn lake_operation_progress(
-    manager: tauri::State<'_, LakeManager>,
-) -> Result<LakeProgress, ServiceError> {
-    manager.progress()
+async fn lake_operation_progress(app: tauri::AppHandle) -> Result<LakeProgress, ServiceError> {
+    blocking(move || app.state::<LakeManager>().progress()).await
 }
 
 #[cfg(feature = "desktop")]
 #[tauri::command]
-fn cancel_lake_operation(manager: tauri::State<'_, LakeManager>) -> Result<(), ServiceError> {
-    manager.cancel()
+async fn cancel_lake_operation(app: tauri::AppHandle) -> Result<(), ServiceError> {
+    blocking(move || app.state::<LakeManager>().cancel()).await
 }
 
 #[cfg(feature = "desktop")]
 #[tauri::command]
-fn diagnose_environment(
-    lake: tauri::State<'_, LakeManager>,
-    server: tauri::State<'_, ServerManager>,
+async fn diagnose_environment(
+    app: tauri::AppHandle,
     project_path: Option<String>,
     required_toolchain: Option<String>,
 ) -> Result<DoctorReport, ServiceError> {
-    let project_path = project_path.map(PathBuf::from);
-    doctor::diagnose(
-        project_path.as_deref(),
-        required_toolchain.as_deref(),
-        &lake,
-        &server,
-    )
+    blocking(move || {
+        let lake = app.state::<LakeManager>();
+        let server = app.state::<ServerManager>();
+        let project_path = project_path.map(PathBuf::from);
+        doctor::diagnose(
+            project_path.as_deref(),
+            required_toolchain.as_deref(),
+            &lake,
+            &server,
+        )
+    })
+    .await
 }
 
 #[cfg(feature = "desktop")]
 #[tauri::command]
-fn doctor_logs(
-    lake: tauri::State<'_, LakeManager>,
-    server: tauri::State<'_, ServerManager>,
+async fn doctor_logs(
+    app: tauri::AppHandle,
     project_path: Option<String>,
     required_toolchain: Option<String>,
 ) -> Result<DoctorLogs, ServiceError> {
-    let project_path = project_path.map(PathBuf::from);
-    doctor::diagnostic_logs(
-        project_path.as_deref(),
-        required_toolchain.as_deref(),
-        &lake,
-        &server,
-    )
+    blocking(move || {
+        let lake = app.state::<LakeManager>();
+        let server = app.state::<ServerManager>();
+        let project_path = project_path.map(PathBuf::from);
+        doctor::diagnostic_logs(
+            project_path.as_deref(),
+            required_toolchain.as_deref(),
+            &lake,
+            &server,
+        )
+    })
+    .await
 }
 
 #[cfg(feature = "desktop")]

@@ -1,4 +1,6 @@
 use super::{
+    lake::{dependency_download_command, missing_dependencies},
+    process::{isolate_process_group, kill_process_tree},
     project::{canonical_project_root, resolve_project_file},
     toolchain::{find_elan, select_toolchain},
     ServiceError, ServiceResult,
@@ -77,6 +79,9 @@ pub struct ServerManager {
 struct ServerConnection {
     writer: Arc<Mutex<BufWriter<ChildStdin>>>,
     child: Mutex<Child>,
+    /// Held for the duration of the `initialize` handshake so concurrent
+    /// `start` calls can wait for its outcome.
+    initializing: Mutex<()>,
     pending: PendingRequests,
     next_id: AtomicU64,
     diagnostics: Arc<Mutex<HashMap<String, Vec<Value>>>>,
@@ -100,10 +105,15 @@ impl ServerManager {
         let root = canonical_project_root(project_path)?;
         let mut servers = self.servers.lock().map_err(server_lock_error)?;
 
-        if let Some(connection) = servers.get(&root) {
+        if let Some(connection) = servers.get(&root).cloned() {
             let status = connection.status()?;
-            if status.state == "ready" || status.state == "starting" {
+            if status.state == "ready" {
                 return Ok(status);
+            }
+            if status.state == "starting" {
+                drop(servers);
+                drop(connection.initializing.lock().map_err(server_lock_error)?);
+                return connection.status();
             }
         }
         if let Some(connection) = servers.remove(&root) {
@@ -111,15 +121,38 @@ impl ServerManager {
         }
 
         let toolchain = select_toolchain(required_toolchain)?;
+        if uses_lake(&root) {
+            let missing = missing_dependencies(&root);
+            if !missing.is_empty() {
+                return Err(missing_dependencies_error(&root, &missing));
+            }
+        }
         let event_sink = self.event_sink.lock().map_err(server_lock_error)?.clone();
         let connection = Arc::new(ServerConnection::spawn(&root, &toolchain, event_sink)?);
+        let initializing = connection.initializing.lock().map_err(server_lock_error)?;
+        servers.insert(root.clone(), Arc::clone(&connection));
+        // The handshake can take as long as REQUEST_TIMEOUT; keep other
+        // projects' and status requests responsive meanwhile.
+        drop(servers);
+
         if let Err(error) = connection.initialize(&root) {
             let _ = connection.terminate();
+            if let Ok(mut status) = connection.status.lock() {
+                status.state = "error".to_owned();
+                status.message = error.summary.clone();
+            }
+            drop(initializing);
+            let mut servers = self.servers.lock().map_err(server_lock_error)?;
+            if servers
+                .get(&root)
+                .is_some_and(|current| Arc::ptr_eq(current, &connection))
+            {
+                servers.remove(&root);
+            }
             return Err(error);
         }
-        let status = connection.status()?;
-        servers.insert(root, connection);
-        Ok(status)
+        drop(initializing);
+        connection.status()
     }
 
     pub fn status(&self, project_path: &Path) -> ServiceResult<ServerStatus> {
@@ -147,10 +180,13 @@ impl ServerManager {
             .lock()
             .map_err(server_lock_error)?
             .remove(&root);
-        if let Some(connection) = connection {
-            connection.shutdown()?;
+        match connection {
+            // A pending `initialize` holds the writer, so a graceful shutdown
+            // would wait for the handshake; killing it fails that request.
+            Some(connection) if connection.status()?.state == "starting" => connection.terminate(),
+            Some(connection) => connection.shutdown(),
+            None => Ok(()),
         }
-        Ok(())
     }
 
     pub fn sync_document(
@@ -255,19 +291,21 @@ impl ServerManager {
     }
 
     fn connection(&self, root: &Path) -> ServiceResult<Arc<ServerConnection>> {
-        self.servers
+        let connection = self
+            .servers
             .lock()
             .map_err(server_lock_error)?
             .get(root)
-            .cloned()
-            .ok_or_else(|| {
-                ServiceError::new(
-                    "lean-server",
-                    "The Lean server is not running for this project.",
-                    "Wait for the server to start, then try again.",
-                    Some(root.display().to_string()),
-                )
-            })
+            .cloned();
+        match connection {
+            Some(connection) if connection.status()?.state != "starting" => Ok(connection),
+            _ => Err(ServiceError::new(
+                "lean-server",
+                "The Lean server is not running for this project.",
+                "Wait for the server to start, then try again.",
+                Some(root.display().to_string()),
+            )),
+        }
     }
 }
 
@@ -286,12 +324,14 @@ impl ServerConnection {
             "name": project_name(root)
         }]);
         let arguments = server_arguments(root, toolchain);
-        let mut child = Command::new(&elan)
+        let mut command = Command::new(&elan);
+        command
             .args(&arguments)
             .current_dir(root)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
+            .stderr(Stdio::piped());
+        let mut child = isolate_process_group(&mut command)
             .spawn()
             .map_err(|error| ServiceError::io("start the Lean server", &elan, &error))?;
         let stdin = child
@@ -334,6 +374,7 @@ impl ServerConnection {
         Ok(Self {
             writer,
             child: Mutex::new(child),
+            initializing: Mutex::new(()),
             pending,
             next_id: AtomicU64::new(1),
             diagnostics,
@@ -346,7 +387,12 @@ impl ServerConnection {
 
     fn initialize(&self, root: &Path) -> ServiceResult<()> {
         let root_uri = directory_uri(root)?;
-        let result = self.request(
+        // Hold the writer until `initialized` is sent. Lean 4.0 sends
+        // `client/registerCapability` right after its initialize response and
+        // aborts if our reply to it arrives before `initialized`.
+        let mut writer = self.writer.lock().map_err(server_lock_error)?;
+        let request = self.write_request(
+            &mut writer,
             "initialize",
             json!({
                 "processId": std::process::id(),
@@ -354,7 +400,8 @@ impl ServerConnection {
                 "rootUri": root_uri,
                 "workspaceFolders": [{"uri": root_uri, "name": project_name(root)}],
                 "capabilities": {
-                    "workspace": {"configuration": true, "workspaceFolders": true},
+                    // Lean 4.0 rejects `workspace` capabilities without `applyEdit`.
+                    "workspace": {"applyEdit": false, "configuration": true, "workspaceFolders": true},
                     "textDocument": {
                         "publishDiagnostics": {"relatedInformation": true, "versionSupport": true},
                         "hover": {"contentFormat": ["markdown", "plaintext"]},
@@ -365,7 +412,12 @@ impl ServerConnection {
                 }
             }),
         )?;
-        self.notify("initialized", json!({}))?;
+        let result = self.await_response("initialize", request, REQUEST_TIMEOUT)?;
+        write_to_server(
+            &mut *writer,
+            &json!({"jsonrpc": "2.0", "method": "initialized", "params": {}}),
+        )?;
+        drop(writer);
 
         let mut status = self.status.lock().map_err(server_lock_error)?;
         status.state = "ready".to_owned();
@@ -643,22 +695,45 @@ impl ServerConnection {
         params: Value,
         timeout: Duration,
     ) -> ServiceResult<Value> {
+        let mut writer = self.writer.lock().map_err(server_lock_error)?;
+        let request = self.write_request(&mut writer, method, params)?;
+        drop(writer);
+        self.await_response(method, request, timeout)
+    }
+
+    fn write_request(
+        &self,
+        writer: &mut BufWriter<ChildStdin>,
+        method: &str,
+        params: Value,
+    ) -> ServiceResult<(u64, mpsc::Receiver<Result<Value, String>>)> {
         let id = self.next_id.fetch_add(1, Ordering::Relaxed);
         let (sender, receiver) = mpsc::channel();
         self.pending
             .lock()
             .map_err(server_lock_error)?
             .insert(id, sender);
-        if let Err(error) = self.send(json!({
-            "jsonrpc": "2.0",
-            "id": id,
-            "method": method,
-            "params": params
-        })) {
+        if let Err(error) = write_to_server(
+            writer,
+            &json!({
+                "jsonrpc": "2.0",
+                "id": id,
+                "method": method,
+                "params": params
+            }),
+        ) {
             self.pending.lock().map_err(server_lock_error)?.remove(&id);
             return Err(error);
         }
+        Ok((id, receiver))
+    }
 
+    fn await_response(
+        &self,
+        method: &str,
+        (id, receiver): (u64, mpsc::Receiver<Result<Value, String>>),
+        timeout: Duration,
+    ) -> ServiceResult<Value> {
         match receiver.recv_timeout(timeout) {
             Ok(Ok(result)) => Ok(result),
             Ok(Err(error)) => Err(ServiceError::new(
@@ -685,14 +760,7 @@ impl ServerConnection {
 
     fn send(&self, message: Value) -> ServiceResult<()> {
         let mut writer = self.writer.lock().map_err(server_lock_error)?;
-        write_message(&mut *writer, &message).map_err(|error| {
-            ServiceError::new(
-                "lean-server",
-                "Could not communicate with the Lean server.",
-                "Restart the Lean server and try again.",
-                Some(error.to_string()),
-            )
-        })
+        write_to_server(&mut *writer, &message)
     }
 
     fn shutdown(&self) -> ServiceResult<()> {
@@ -722,7 +790,7 @@ impl ServerConnection {
             .map_err(|error| process_error("inspect", error))?
             .is_none()
         {
-            child.kill().map_err(|error| process_error("stop", error))?;
+            kill_process_tree(&mut child).map_err(|error| process_error("stop", error))?;
         }
         let _ = child.wait();
         if let Ok(mut status) = self.status.lock() {
@@ -782,9 +850,26 @@ impl ProofCompatibilityAdapter {
     }
 }
 
+fn uses_lake(root: &Path) -> bool {
+    root.join("lakefile.toml").is_file() || root.join("lakefile.lean").is_file()
+}
+
+fn missing_dependencies_error(root: &Path, missing: &[String]) -> ServiceError {
+    let command = dependency_download_command(missing);
+    ServiceError::new(
+        "missing-dependencies",
+        format!(
+            "Dependencies not downloaded ({}). Run `{command}` in the project folder, then restart the Lean server.",
+            missing.join(", ")
+        ),
+        format!("Run `{command}` in a terminal from the project folder, then restart the Lean server."),
+        Some(root.display().to_string()),
+    )
+}
+
 fn server_arguments(root: &Path, toolchain: &str) -> Vec<String> {
     let mut arguments = vec!["run".to_owned(), toolchain.to_owned()];
-    if root.join("lakefile.toml").is_file() || root.join("lakefile.lean").is_file() {
+    if uses_lake(root) {
         arguments.extend(["lake", "env", "lean", "--server"].map(str::to_owned));
     } else {
         arguments.extend(["lean", "--server"].map(str::to_owned));
@@ -1061,6 +1146,17 @@ impl ProofState {
     fn empty() -> Self {
         Self { goals: Vec::new() }
     }
+}
+
+fn write_to_server(writer: &mut impl Write, message: &Value) -> ServiceResult<()> {
+    write_message(writer, message).map_err(|error| {
+        ServiceError::new(
+            "lean-server",
+            "Could not communicate with the Lean server.",
+            "Restart the Lean server and try again.",
+            Some(error.to_string()),
+        )
+    })
 }
 
 fn write_message(writer: &mut impl Write, message: &Value) -> io::Result<()> {

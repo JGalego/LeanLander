@@ -430,7 +430,7 @@ fn collect_lean_sources(
 fn is_ignored_directory(name: &std::ffi::OsStr) -> bool {
     matches!(
         name.to_str(),
-        Some(".git" | ".lake" | "build" | "node_modules" | "target")
+        Some(".git" | ".lake" | "build" | "lake-packages" | "node_modules" | "target")
     )
 }
 

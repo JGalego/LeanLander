@@ -1,12 +1,14 @@
 use super::{
+    process::{isolate_process_group, kill_process_tree},
     project::canonical_project_root,
     toolchain::{find_elan, select_toolchain},
     ServiceError, ServiceResult,
 };
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 use std::{
     collections::VecDeque,
-    env,
+    env, fs,
     io::{BufRead, BufReader},
     path::{Path, PathBuf},
     process::{Child, Command, ExitStatus, Stdio},
@@ -230,7 +232,7 @@ impl LakeManager {
         cancelled.store(true, Ordering::Release);
         let mut child = self.child.lock().map_err(lake_lock_error)?;
         if let Some(child) = child.as_mut() {
-            let _ = child.kill();
+            let _ = kill_process_tree(child);
         }
         drop(child);
         let mut progress = self.progress.lock().map_err(lake_lock_error)?;
@@ -378,6 +380,7 @@ fn run_process(
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
+    isolate_process_group(&mut command);
     let mut process = command.spawn().map_err(|error| OperationFailure {
         category: "process".to_owned(),
         summary: format!("Could not start {}.", operation_label(operation)),
@@ -475,7 +478,7 @@ fn wait_for_process(context: &OperationContext) -> Result<ExitStatus, OperationF
                 details: None,
             })?;
             if context.cancelled.load(Ordering::Acquire) {
-                let _ = process.kill();
+                let _ = kill_process_tree(process);
             }
             match process.try_wait() {
                 Ok(Some(status)) => {
@@ -733,6 +736,71 @@ fn target_path(options: &CreateProjectOptions) -> PathBuf {
     options.parent_path.join(&options.name)
 }
 
+/// Git packages pinned in `lake-manifest.json` whose checkout is absent or
+/// incomplete. `lake env` clones these before doing anything else, which for
+/// Mathlib means gigabytes of history, so callers should fetch them first.
+pub(crate) fn missing_dependencies(root: &Path) -> Vec<String> {
+    let Some(manifest) = fs::read_to_string(root.join("lake-manifest.json"))
+        .ok()
+        .and_then(|contents| serde_json::from_str::<Value>(&contents).ok())
+    else {
+        return Vec::new();
+    };
+    // Lake moved dependencies from `lake-packages` to `.lake/packages` with
+    // manifest version 7; newer manifests always name the directory.
+    let legacy = manifest
+        .get("version")
+        .and_then(Value::as_u64)
+        .is_some_and(|version| version < 7);
+    let packages_dir = root.join(
+        manifest
+            .get("packagesDir")
+            .and_then(Value::as_str)
+            .unwrap_or(if legacy {
+                "lake-packages"
+            } else {
+                ".lake/packages"
+            }),
+    );
+
+    manifest
+        .get("packages")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(|package| {
+            // Older manifests nest each entry under its kind (`git`/`path`);
+            // newer ones are flat with a `type` field.
+            let (entry, sub_dir) = match package.get("git") {
+                Some(git) => (git, git.get("subDir?")),
+                None if package.get("type").and_then(Value::as_str) == Some("git") => {
+                    (package, package.get("subDir"))
+                }
+                None => return None,
+            };
+            let name = entry.get("name").and_then(Value::as_str)?;
+            let mut directory = packages_dir.join(name);
+            if let Some(sub_dir) = sub_dir.and_then(Value::as_str) {
+                directory.push(sub_dir);
+            }
+            let checked_out = ["lakefile.lean", "lakefile.toml"]
+                .iter()
+                .any(|lakefile| directory.join(lakefile).is_file());
+            (!checked_out).then(|| name.to_owned())
+        })
+        .collect()
+}
+
+/// The command that downloads missing dependencies at their pinned revisions.
+/// Mathlib's cache also avoids compiling Mathlib from source.
+pub(crate) fn dependency_download_command(missing: &[String]) -> &'static str {
+    if missing.iter().any(|name| name == "mathlib") {
+        "lake exe cache get"
+    } else {
+        "lake build"
+    }
+}
+
 fn require_lake_project(root: &Path) -> ServiceResult<()> {
     if root.join("lakefile.toml").is_file() || root.join("lakefile.lean").is_file() {
         Ok(())
@@ -780,6 +848,43 @@ mod tests {
 
         options.template = ProjectTemplate::Mathlib;
         assert_eq!(create_arguments(&options), ["new", "ProofGarden", "math"]);
+    }
+
+    #[test]
+    fn reports_manifest_dependencies_that_are_not_checked_out() {
+        let root = temporary_directory("legacy-manifest");
+        fs::write(
+            root.join("lake-manifest.json"),
+            r#"{"version": 5, "packagesDir": "lake-packages", "packages": [
+                {"git": {"name": "mathlib", "subDir?": null}},
+                {"git": {"name": "std", "subDir?": null}},
+                {"path": {"name": "local", "dir": "../local"}}
+            ]}"#,
+        )
+        .unwrap();
+        // An interrupted clone leaves `.git` behind without a working tree.
+        fs::create_dir_all(root.join("lake-packages/mathlib/.git")).unwrap();
+        fs::create_dir_all(root.join("lake-packages/std")).unwrap();
+        fs::write(root.join("lake-packages/std/lakefile.lean"), "").unwrap();
+        assert_eq!(missing_dependencies(&root), ["mathlib"]);
+
+        fs::write(
+            root.join("lake-manifest.json"),
+            r#"{"version": "1.1.0", "packagesDir": ".lake/packages", "packages": [
+                {"type": "git", "name": "batteries", "subDir": null},
+                {"type": "git", "name": "nested", "subDir": "lib"}
+            ]}"#,
+        )
+        .unwrap();
+        fs::create_dir_all(root.join(".lake/packages/batteries")).unwrap();
+        fs::write(root.join(".lake/packages/batteries/lakefile.toml"), "").unwrap();
+        fs::create_dir_all(root.join(".lake/packages/nested/lib")).unwrap();
+        fs::write(root.join(".lake/packages/nested/lib/lakefile.lean"), "").unwrap();
+        assert!(missing_dependencies(&root).is_empty());
+
+        fs::remove_file(root.join("lake-manifest.json")).unwrap();
+        assert!(missing_dependencies(&root).is_empty());
+        fs::remove_dir_all(root).unwrap();
     }
 
     #[test]

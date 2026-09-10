@@ -313,6 +313,76 @@ describe('App', () => {
     )
   })
 
+  it('keeps the editor available while a native Lean server is starting', async () => {
+    const user = userEvent.setup()
+    const gateway: ProjectGateway = {
+      chooseProject: vi.fn().mockResolvedValue({
+        name: 'Legacy Course',
+        path: '/home/ada/Legacy Course',
+      }),
+      chooseProjectParent: vi.fn(),
+    }
+    const client: ProjectClient = {
+      discoverProject: vi.fn().mockResolvedValue({
+        metadata: {
+          name: 'Legacy Course',
+          path: '/home/ada/Legacy Course',
+          leanToolchain: 'leanprover/lean4:v4.0.0-rc4',
+          lakefile: 'lakefile.lean',
+          sourceRoots: ['Course'],
+          warnings: [],
+        },
+        files: [{
+          id: 'Course/Example.lean',
+          name: 'Example.lean',
+          path: 'Course/Example.lean',
+          content: 'example : True := by trivial',
+        }],
+      }),
+      loadFile: vi.fn(),
+      saveFile: vi.fn(),
+      recentProjects: vi.fn().mockResolvedValue([]),
+    }
+    const toolchains: ToolchainClient = {
+      status: vi.fn().mockResolvedValue({
+        state: 'ready',
+        elanPath: '/home/ada/.elan/bin/elan',
+        elanVersion: '4.2.0',
+        requiredToolchain: 'leanprover/lean4:v4.0.0-rc4',
+        activeToolchain: 'leanprover/lean4:v4.0.0-rc4',
+        installedToolchains: [],
+        repairs: [],
+      }),
+      install: vi.fn(),
+      progress: vi.fn(),
+      cancel: vi.fn(),
+    }
+    const language: LanguageClient = {
+      start: vi.fn().mockReturnValue(new Promise(() => undefined)),
+      status: vi.fn(),
+      stop: vi.fn().mockResolvedValue(undefined),
+      syncDocument: vi.fn(),
+      closeDocument: vi.fn().mockResolvedValue(undefined),
+      diagnostics: vi.fn(),
+      request: vi.fn(),
+      proofState: vi.fn(),
+    }
+
+    render(
+      <App
+        client={client}
+        gateway={gateway}
+        language={language}
+        toolchains={toolchains}
+      />,
+    )
+    await user.click(screen.getByRole('button', { name: 'Open project' }))
+
+    expect(await screen.findByText('Waiting to start Lean server')).toBeInTheDocument()
+    expect(screen.getByRole<HTMLTextAreaElement>('textbox', { name: 'Lean editor' }).value)
+      .toContain('example : True')
+  })
+
   it('creates and opens a Mathlib project with optional Git initialization', async () => {
     const user = userEvent.setup()
     const gateway: ProjectGateway = {
