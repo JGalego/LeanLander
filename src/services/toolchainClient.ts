@@ -1,4 +1,5 @@
 import { invoke, isTauri } from '@tauri-apps/api/core'
+import { listen, type UnlistenFn } from '@tauri-apps/api/event'
 
 export type ToolchainState =
   | 'checking'
@@ -44,6 +45,7 @@ export interface ToolchainClient {
   install(toolchain: string): Promise<void>
   progress(): Promise<InstallProgress>
   cancel(): Promise<void>
+  onProgress?(handler: (progress: InstallProgress) => void): Promise<UnlistenFn>
 }
 
 export const checkingToolchainStatus: ToolchainStatus = {
@@ -78,5 +80,11 @@ export const toolchainClient: ToolchainClient = {
 
   cancel() {
     return invoke('cancel_toolchain_install')
+  },
+
+  onProgress(handler) {
+    return isTauri()
+      ? listen<InstallProgress>('toolchain-progress', ({ payload }) => handler(payload))
+      : Promise.resolve(() => undefined)
   },
 }

@@ -1,14 +1,14 @@
 use super::{ServiceError, ServiceResult};
 use serde::{Deserialize, Serialize};
 use std::{
-    collections::BTreeSet,
+    collections::{BTreeMap, BTreeSet},
     fs,
     path::{Component, Path, PathBuf},
     time::{SystemTime, UNIX_EPOCH},
 };
 
-const MAX_SOURCE_FILES: usize = 2_000;
 const MAX_SOURCE_BYTES: u64 = 2 * 1024 * 1024;
+const MAX_SEARCH_RESULTS: usize = 500;
 const MAX_RECENT_PROJECTS: usize = 10;
 const RECENT_PROJECTS_FILE: &str = "recent-projects.json";
 
@@ -19,6 +19,25 @@ pub struct ProjectFile {
     pub name: String,
     pub path: String,
     pub content: String,
+    pub loaded: bool,
+    pub read_only: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProjectTreeNode {
+    pub name: String,
+    pub path: String,
+    pub kind: String,
+    pub children: Vec<ProjectTreeNode>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProjectSearchResult {
+    pub path: String,
+    pub line: usize,
+    pub preview: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -37,6 +56,7 @@ pub struct ProjectMetadata {
 pub struct DiscoveredProject {
     pub metadata: ProjectMetadata,
     pub files: Vec<ProjectFile>,
+    pub tree: Vec<ProjectTreeNode>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -93,23 +113,21 @@ pub fn discover_project(path: &Path) -> ServiceResult<DiscoveredProject> {
             .to_owned();
         source_roots.insert(source_root);
 
-        match read_source_file(&source_path) {
-            Ok(content) => files.push(ProjectFile {
-                id: relative_display.clone(),
-                name: source_path
-                    .file_name()
-                    .and_then(|name| name.to_str())
-                    .unwrap_or(&relative_display)
-                    .to_owned(),
-                path: relative_display,
-                content,
-            }),
-            Err(error) => {
-                warnings.push(format!("Skipped {}: {}", relative.display(), error.summary))
-            }
-        }
+        files.push(ProjectFile {
+            id: relative_display.clone(),
+            name: source_path
+                .file_name()
+                .and_then(|name| name.to_str())
+                .unwrap_or(&relative_display)
+                .to_owned(),
+            path: relative_display,
+            content: String::new(),
+            loaded: false,
+            read_only: false,
+        });
     }
 
+    let tree = project_tree(&files);
     Ok(DiscoveredProject {
         metadata: ProjectMetadata {
             name,
@@ -120,6 +138,7 @@ pub fn discover_project(path: &Path) -> ServiceResult<DiscoveredProject> {
             warnings,
         },
         files,
+        tree,
     })
 }
 
@@ -144,7 +163,139 @@ pub fn load_project_file(project_path: &Path, relative_path: &Path) -> ServiceRe
             .to_owned(),
         path: display_path,
         content: read_source_file(&source_path)?,
+        loaded: true,
+        read_only: false,
     })
+}
+
+pub fn load_project_uri(project_path: &Path, uri: &str) -> ServiceResult<ProjectFile> {
+    let root = canonical_project_root(project_path)?;
+    let source_path = url::Url::parse(uri)
+        .ok()
+        .and_then(|uri| uri.to_file_path().ok())
+        .ok_or_else(|| invalid_source_uri(uri))?
+        .canonicalize()
+        .map_err(|error| {
+            ServiceError::io("resolve the Lean source file", Path::new(uri), &error)
+        })?;
+    let dependency_root = root.join(".lake/packages").canonicalize().ok();
+    let read_only = dependency_root
+        .as_ref()
+        .is_some_and(|dependency_root| source_path.starts_with(dependency_root));
+    if !source_path.starts_with(&root)
+        || (!read_only
+            && source_path
+                .components()
+                .any(|part| part.as_os_str() == ".lake"))
+    {
+        return Err(invalid_source_uri(uri));
+    }
+    let relative = source_path
+        .strip_prefix(&root)
+        .map_err(|_| invalid_source_uri(uri))?;
+    validate_relative_lean_path(relative)?;
+    let display_path = relative_path_to_string(relative)?;
+    Ok(ProjectFile {
+        id: display_path.clone(),
+        name: source_path
+            .file_name()
+            .and_then(|name| name.to_str())
+            .unwrap_or(&display_path)
+            .to_owned(),
+        path: display_path,
+        content: read_source_file(&source_path)?,
+        loaded: true,
+        read_only,
+    })
+}
+
+pub fn search_project(project_path: &Path, query: &str) -> ServiceResult<Vec<ProjectSearchResult>> {
+    let query = query.trim();
+    if query.is_empty() {
+        return Ok(Vec::new());
+    }
+    let root = canonical_project_root(project_path)?;
+    let mut sources = Vec::new();
+    let mut warnings = Vec::new();
+    collect_lean_sources(&root, &root, &mut sources, &mut warnings)?;
+    let mut results = Vec::new();
+    for source in sources {
+        let Ok(content) = read_source_file(&source) else {
+            continue;
+        };
+        for (index, line) in content.lines().enumerate() {
+            if line.contains(query) {
+                results.push(ProjectSearchResult {
+                    path: relative_path_to_string(
+                        source
+                            .strip_prefix(&root)
+                            .map_err(|_| invalid_source_uri(query))?,
+                    )?,
+                    line: index + 1,
+                    preview: line.trim().to_owned(),
+                });
+                if results.len() == MAX_SEARCH_RESULTS {
+                    return Ok(results);
+                }
+            }
+        }
+    }
+    Ok(results)
+}
+
+fn project_tree(files: &[ProjectFile]) -> Vec<ProjectTreeNode> {
+    fn insert(
+        nodes: &mut BTreeMap<String, ProjectTreeNode>,
+        parts: &[&str],
+        full_path: &str,
+        parent_path: &str,
+    ) {
+        let Some((name, rest)) = parts.split_first() else {
+            return;
+        };
+        let node = nodes
+            .entry((*name).to_owned())
+            .or_insert_with(|| ProjectTreeNode {
+                name: (*name).to_owned(),
+                path: if rest.is_empty() {
+                    full_path.to_owned()
+                } else if parent_path.is_empty() {
+                    (*name).to_owned()
+                } else {
+                    format!("{parent_path}/{name}")
+                },
+                kind: if rest.is_empty() { "file" } else { "directory" }.to_owned(),
+                children: Vec::new(),
+            });
+        if !rest.is_empty() {
+            let mut children = node
+                .children
+                .drain(..)
+                .map(|child| (child.name.clone(), child))
+                .collect();
+            insert(&mut children, rest, full_path, &node.path);
+            node.children = children.into_values().collect();
+        }
+    }
+    let mut roots = BTreeMap::new();
+    for file in files {
+        insert(
+            &mut roots,
+            &file.path.split('/').collect::<Vec<_>>(),
+            &file.path,
+            "",
+        );
+    }
+    roots.into_values().collect()
+}
+
+fn invalid_source_uri(uri: &str) -> ServiceError {
+    ServiceError::new(
+        "invalid-path",
+        "The language server target is outside the project and dependency roots.",
+        "Open a Lean source inside the project or .lake/packages.",
+        Some(uri.to_owned()),
+    )
 }
 
 pub fn save_project_file(
@@ -255,24 +406,12 @@ fn collect_lean_sources(
                 continue;
             }
             collect_lean_sources(root, &path, sources, warnings)?;
-            if sources.len() >= MAX_SOURCE_FILES {
-                warnings.push(format!(
-                    "Only the first {MAX_SOURCE_FILES} Lean source files were loaded."
-                ));
-                return Ok(());
-            }
         } else if file_type.is_file()
             && path
                 .extension()
                 .is_some_and(|extension| extension == "lean")
         {
             sources.push(path);
-            if sources.len() >= MAX_SOURCE_FILES {
-                warnings.push(format!(
-                    "Only the first {MAX_SOURCE_FILES} Lean source files were loaded."
-                ));
-                return Ok(());
-            }
         }
     }
 
@@ -547,5 +686,62 @@ mod tests {
             load_recent_projects(&directory.0).unwrap_err().category,
             "configuration"
         );
+    }
+
+    #[test]
+    fn returns_a_path_tree_and_searches_source_contents() {
+        let directory = TestDirectory::new("tree-search");
+        fs::create_dir_all(directory.0.join("Mathlib/Analysis")).unwrap();
+        fs::write(
+            directory.0.join("Mathlib/Analysis/Main.lean"),
+            "theorem searchable_fact : True := by trivial\n",
+        )
+        .unwrap();
+
+        let project = discover_project(&directory.0).unwrap();
+        assert_eq!(project.tree[0].name, "Mathlib");
+        assert_eq!(project.tree[0].path, "Mathlib");
+        assert_eq!(project.tree[0].children[0].name, "Analysis");
+        assert_eq!(project.tree[0].children[0].path, "Mathlib/Analysis");
+        assert_eq!(project.tree[0].children[0].children[0].name, "Main.lean");
+        assert_eq!(
+            project.tree[0].children[0].children[0].path,
+            "Mathlib/Analysis/Main.lean"
+        );
+        assert!(project.files[0].content.is_empty());
+        assert!(!project.files[0].loaded);
+
+        let results = search_project(&directory.0, "searchable_fact").unwrap();
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].path, "Mathlib/Analysis/Main.lean");
+        assert_eq!(results[0].line, 1);
+    }
+
+    #[test]
+    fn opens_only_project_and_dependency_uris() {
+        let directory = TestDirectory::new("dependency-uri");
+        fs::write(directory.0.join("Main.lean"), "import Dep").unwrap();
+        fs::create_dir_all(directory.0.join(".lake/packages/dep/Dep")).unwrap();
+        let dependency = directory.0.join(".lake/packages/dep/Dep/Main.lean");
+        fs::write(&dependency, "theorem from_dependency : True := by trivial").unwrap();
+        let outside = TestDirectory::new("outside-uri");
+        let outside_source = outside.0.join("Outside.lean");
+        fs::write(&outside_source, "theorem outside : True := by trivial").unwrap();
+
+        let project_uri = url::Url::from_file_path(directory.0.join("Main.lean")).unwrap();
+        let dependency_uri = url::Url::from_file_path(&dependency).unwrap();
+        let outside_uri = url::Url::from_file_path(&outside_source).unwrap();
+
+        assert!(
+            !load_project_uri(&directory.0, project_uri.as_str())
+                .unwrap()
+                .read_only
+        );
+        assert!(
+            load_project_uri(&directory.0, dependency_uri.as_str())
+                .unwrap()
+                .read_only
+        );
+        assert!(load_project_uri(&directory.0, outside_uri.as_str()).is_err());
     }
 }

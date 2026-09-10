@@ -37,7 +37,9 @@ import {
   languageClient,
   offlineServerStatus,
   type LanguageClient,
+  type DocumentChange,
   type LspDiagnostic,
+  type LeanMessage,
   type ServerStatus,
 } from './services/languageClient'
 import {
@@ -51,6 +53,7 @@ import {
   projectClient,
   type ProjectClient,
   type ProjectMetadata,
+  type ProjectSearchResult,
   type RecentProject,
 } from './services/projectClient'
 import { markOnce, performanceMarks } from './performance'
@@ -118,13 +121,44 @@ function App({
   const [serverStatus, setServerStatus] = useState<ServerStatus>(offlineServerStatus)
   const [nativeProofState, setNativeProofState] = useState<ProofState>(noProofState)
   const [diagnostics, setDiagnostics] = useState<LspDiagnostic[]>([])
+  const [isElaborating, setIsElaborating] = useState(false)
+  const [serverMessages, setServerMessages] = useState<LeanMessage[]>([])
   const [syncedDocument, setSyncedDocument] = useState<string | null>(null)
+  const [searchResults, setSearchResults] = useState<ProjectSearchResult[]>([])
+  const [revealPosition, setRevealPosition] = useState<{ lineNumber: number; column: number } | null>(null)
   const documentVersions = useRef(new Map<string, number>())
+  const pendingDocumentChanges = useRef(new Map<string, DocumentChange[]>())
+  const documentDiagnostics = useRef(new Map<string, LspDiagnostic[]>())
+  const documentProofStates = useRef(new Map<string, ProofState>())
   const serverLeases = useRef(new Map<string, number>())
   const projectLoadGeneration = useRef(0)
 
   useEffect(() => {
     markOnce(performanceMarks.appReady)
+  }, [])
+
+  const handleAccelerator = useEffectEvent((event: KeyboardEvent) => {
+    if (!(event.metaKey || event.ctrlKey) || event.altKey) return
+    const key = event.key.toLowerCase()
+    if (key === 's' && !event.shiftKey) {
+      event.preventDefault()
+      void saveActiveFile()
+    } else if (key === 'p' && !event.shiftKey) {
+      event.preventDefault()
+      window.dispatchEvent(new CustomEvent('leanlander:focus-file-filter'))
+    } else if (key === 'f' && event.shiftKey) {
+      event.preventDefault()
+      window.dispatchEvent(new CustomEvent('leanlander:focus-file-filter'))
+    } else if (key === 'd' && event.shiftKey) {
+      event.preventDefault()
+      setShowDoctor(true)
+    }
+  })
+
+  useEffect(() => {
+    const listener = (event: KeyboardEvent) => handleAccelerator(event)
+    window.addEventListener('keydown', listener)
+    return () => window.removeEventListener('keydown', listener)
   }, [])
 
   const activeFile = files.find((file) => file.id === activeFileId) ?? files[0] ?? null
@@ -135,8 +169,6 @@ function App({
   const proofState = isSample
     ? proofStateAt(activeFile?.id ?? '', cursor.lineNumber)
     : nativeProofState
-  const shouldPollLake = Boolean(lakeProgress?.running)
-
   const receiveLakeProgress = useEffectEvent(async (progress: LakeProgress) => {
     setLakeProgress(progress)
     setStatusMessage(
@@ -240,32 +272,24 @@ function App({
   }, [isSample, language, project.path, projectMetadata?.leanToolchain, toolchainStatus.state])
 
   useEffect(() => {
-    if (isSample || serverStatus.state !== 'ready' || !activeFilePath) {
-      return
-    }
-
-    const projectPath = project.path
-    const relativePath = activeFilePath
-    return () => {
-      void language.closeDocument(projectPath, relativePath).catch(() => undefined)
-    }
-  }, [activeFilePath, isSample, language, project.path, serverStatus.state])
-
-  useEffect(() => {
     if (isSample || serverStatus.state !== 'ready' || !activeFile) {
       return
     }
 
     let isCurrent = true
     const key = `${project.path}\0${activeFile.path}`
+    if (documentVersions.current.has(key) && !pendingDocumentChanges.current.has(key)) {
+      setSyncedDocument(key)
+      return
+    }
     const timeout = window.setTimeout(() => {
       const version = (documentVersions.current.get(key) ?? 0) + 1
-      void language.syncDocument(
-        project.path,
-        activeFile.path,
-        activeFile.content,
-        version,
-      ).then((acceptedVersion) => {
+      const changes = pendingDocumentChanges.current.get(key)
+      pendingDocumentChanges.current.delete(key)
+      const sync = changes && documentVersions.current.has(key)
+        ? language.syncDocument(project.path, activeFile.path, activeFile.content, version, changes)
+        : language.syncDocument(project.path, activeFile.path, activeFile.content, version)
+      void sync.then((acceptedVersion) => {
         documentVersions.current.set(key, acceptedVersion)
         if (isCurrent) {
           setSyncedDocument(key)
@@ -293,23 +317,44 @@ function App({
     }
 
     let isCurrent = true
-    const refresh = () => {
-      void language.diagnostics(project.path, activeFilePath)
-        .then((items) => {
-          if (isCurrent) {
-            setDiagnostics(items)
-          }
-        })
-        .catch(() => undefined)
+    const accept = (uri: string, items: LspDiagnostic[]) => {
+      if (!isCurrent || !decodeURIComponent(uri).endsWith(`/${activeFilePath}`)) return
+      setDiagnostics(items)
+      documentDiagnostics.current.set(key, items)
     }
-    refresh()
-    const interval = window.setInterval(refresh, 600)
+    void language.diagnostics(project.path, activeFilePath)
+      .then((items) => accept(`/${activeFilePath}`, items))
+      .catch(() => undefined)
+    let unlisten: (() => void) | undefined
+    const subscribe = import.meta.env.MODE === 'e2e' ? undefined : language.onDiagnostics
+    void subscribe?.(({ uri, diagnostics: items }) => accept(uri, items))
+      .then((dispose) => { unlisten = dispose })
 
     return () => {
       isCurrent = false
-      window.clearInterval(interval)
+      unlisten?.()
     }
   }, [activeFilePath, isSample, language, project.path, serverStatus.state, syncedDocument])
+
+  useEffect(() => {
+    if (!activeFilePath || !language.onFileProgress || import.meta.env.MODE === 'e2e') return
+    let unlisten: (() => void) | undefined
+    void language.onFileProgress((progress) => {
+      const uri = progress.textDocument?.uri
+      if (!uri || !decodeURIComponent(uri).endsWith(`/${activeFilePath}`)) return
+      setIsElaborating((progress.processing?.length ?? 0) > 0)
+    }).then((dispose) => { unlisten = dispose })
+    return () => unlisten?.()
+  }, [activeFilePath, language])
+
+  useEffect(() => {
+    if (!language.onMessage || import.meta.env.MODE === 'e2e') return
+    let unlisten: (() => void) | undefined
+    void language.onMessage((message) => {
+      setServerMessages((current) => [...current.slice(-99), message])
+    }).then((dispose) => { unlisten = dispose })
+    return () => unlisten?.()
+  }, [language])
 
   useEffect(() => {
     if (isSample || serverStatus.state !== 'ready' || !activeFilePath) {
@@ -328,6 +373,7 @@ function App({
       }).then((state) => {
         if (isCurrent) {
           setNativeProofState(state)
+            documentProofStates.current.set(key, state)
         }
       }).catch(() => {
         if (isCurrent) {
@@ -343,51 +389,95 @@ function App({
   }, [activeFilePath, cursor, isSample, language, project.path, serverStatus.state, syncedDocument])
 
   useEffect(() => {
-    if (!shouldPollLake) {
-      return
+    if (lake.onProgress && import.meta.env.MODE !== 'e2e') {
+      let unlisten: (() => void) | undefined
+      void lake.onProgress((progress) => void receiveLakeProgress(progress))
+        .then((dispose) => { unlisten = dispose })
+      return () => unlisten?.()
     }
+    if (!lakeProgress?.running) return
 
-    let isCurrent = true
+    let current = true
     let timeout: number | undefined
     const poll = async () => {
-      try {
-        const progress = await lake.progress()
-        if (!isCurrent) {
-          return
-        }
-        await receiveLakeProgress(progress)
-        if (isCurrent && progress.running) {
-          timeout = window.setTimeout(poll, 300)
-        }
-      } catch (error) {
-        if (isCurrent) {
-          setLakeProgress(null)
-          setStatusMessage(errorSummary(error))
-        }
-      }
+      const progress = await lake.progress()
+      if (!current) return
+      await receiveLakeProgress(progress)
+      if (current && progress.running) timeout = window.setTimeout(poll, 300)
     }
-    void poll()
-
+    void poll().catch((error) => setStatusMessage(errorSummary(error)))
     return () => {
-      isCurrent = false
-      if (timeout !== undefined) {
-        window.clearTimeout(timeout)
+      current = false
+      if (timeout !== undefined) window.clearTimeout(timeout)
+    }
+  }, [lake, lakeProgress?.running])
+
+  async function selectFile(fileId: string) {
+    const selected = files.find((file) => file.id === fileId)
+    if (selected?.loaded === false) {
+      try {
+        const loaded = await client.loadFile(project.path, selected.path)
+        setFiles((current) => current.map((file) => file.id === fileId ? loaded : file))
+      } catch (error) {
+        setStatusMessage(errorSummary(error))
+        return
       }
     }
-  }, [lake, shouldPollLake])
-
-  function selectFile(fileId: string) {
-    setOpenFileIds((current) =>
-      current.includes(fileId) ? current : [...current, fileId],
-    )
+    setOpenFileIds((current) => {
+      if (current.includes(fileId)) return current
+      const next = [...current, fileId]
+      if (next.length <= 12) return next
+      const evicted = next.find((id) => id !== fileId && !dirtyFileIds.includes(id))
+      if (!evicted) return next
+      const evictedFile = files.find((file) => file.id === evicted)
+      if (evictedFile && !isSample) {
+        void language.closeDocument(project.path, evictedFile.path).catch(() => undefined)
+        const key = `${project.path}\0${evictedFile.path}`
+        documentVersions.current.delete(key)
+        documentDiagnostics.current.delete(key)
+        documentProofStates.current.delete(key)
+      }
+      return next.filter((id) => id !== evicted)
+    })
     setActiveFileId(fileId)
     setCursor({ lineNumber: 1, column: 1 })
-    setDiagnostics([])
-    setNativeProofState(noProofState)
+    const key = selected ? `${project.path}\0${selected.path}` : ''
+    setDiagnostics(documentDiagnostics.current.get(key) ?? [])
+    setNativeProofState(documentProofStates.current.get(key) ?? noProofState)
     setSyncedDocument(null)
+    setRevealPosition(null)
   }
 
-  function updateActiveFile(content: string) {
+  async function openLocation(uri: string, range: { start: { line: number; character: number } }) {
+    if (!client.loadUri) return
+    try {
+      const loaded = await client.loadUri(project.path, uri)
+      setFiles((current) => current.some((file) => file.id === loaded.id)
+        ? current.map((file) => file.id === loaded.id ? loaded : file)
+        : [...current, loaded])
+      setOpenFileIds((current) => current.includes(loaded.id) ? current : [...current, loaded.id])
+      setActiveFileId(loaded.id)
+      setRevealPosition({ lineNumber: range.start.line + 1, column: range.start.character + 1 })
+      setStatusMessage(`Opened ${loaded.path}${loaded.readOnly ? ' read-only' : ''}`)
+    } catch (error) {
+      setStatusMessage(errorSummary(error))
+    }
+  }
+
+  async function searchProject(query: string) {
+    if (!client.search || isSample || query.trim().length < 2) {
+      setSearchResults([])
+      return
+    }
+    setSearchResults(await client.search(project.path, query).catch(() => []))
+  }
+
+  async function openSearchResult(result: ProjectSearchResult) {
+    await selectFile(result.path)
+    setRevealPosition({ lineNumber: result.line, column: 1 })
+  }
+
+  function updateActiveFile(content: string, changes: DocumentChange[] = []) {
     if (!activeFile) {
       return
     }
@@ -401,6 +491,11 @@ function App({
       current.includes(activeFileId) ? current : [...current, activeFileId],
     )
     setStatusMessage('Unsaved changes')
+    const key = `${project.path}\0${activeFile.path}`
+    pendingDocumentChanges.current.set(key, [
+      ...(pendingDocumentChanges.current.get(key) ?? []),
+      ...changes,
+    ])
     setSyncedDocument(null)
   }
 
@@ -419,15 +514,22 @@ function App({
     if (projectLoadGeneration.current !== generation) {
       return false
     }
-    const firstFileId = discovered.files[0]?.id ?? ''
+    const firstDescriptor = discovered.files[0]
+    const firstFile = firstDescriptor?.loaded === false
+      ? await client.loadFile(discovered.metadata.path, firstDescriptor.path)
+      : firstDescriptor
+    const discoveredFiles = firstFile
+      ? discovered.files.map((file) => file.id === firstFile.id ? firstFile : file)
+      : discovered.files
+    const firstFileId = firstFile?.id ?? ''
 
     startTransition(() => {
       setProject({
         name: discovered.metadata.name,
         path: discovered.metadata.path,
-        files: discovered.files,
+        files: discoveredFiles,
       })
-      setFiles(discovered.files)
+      setFiles(discoveredFiles)
       setProjectMetadata(discovered.metadata)
       setActiveFileId(firstFileId)
       setOpenFileIds(firstFileId ? [firstFileId] : [])
@@ -435,7 +537,11 @@ function App({
       setCursor({ lineNumber: 1, column: 1 })
       setIsSample(false)
       documentVersions.current.clear()
+      pendingDocumentChanges.current.clear()
+      documentDiagnostics.current.clear()
+      documentProofStates.current.clear()
       setDiagnostics([])
+      setServerMessages([])
       setNativeProofState(noProofState)
       setSyncedDocument(null)
       setServerStatus({
@@ -529,20 +635,34 @@ function App({
     setStatusMessage(`Installing ${requiredToolchain}…`)
 
     try {
-      await toolchains.install(requiredToolchain)
-
       let finalProgress: InstallProgress | null = null
-      while (true) {
-        const progress = await toolchains.progress()
-        setInstallProgress(progress)
-        setStatusMessage(progress.message)
-
-        if (!progress.running) {
-          finalProgress = progress
-          break
+      if (toolchains.onProgress && import.meta.env.MODE !== 'e2e') {
+        finalProgress = await new Promise<InstallProgress>((resolve, reject) => {
+          let unlisten: (() => void) | undefined
+          void toolchains.onProgress?.((progress) => {
+            setInstallProgress(progress)
+            setStatusMessage(progress.message)
+            if (!progress.running) {
+              unlisten?.()
+              resolve(progress)
+            }
+          }).then((dispose) => {
+            unlisten = dispose
+            return toolchains.install(requiredToolchain)
+          }).catch(reject)
+        })
+      } else {
+        await toolchains.install(requiredToolchain)
+        while (true) {
+          const progress = await toolchains.progress()
+          setInstallProgress(progress)
+          setStatusMessage(progress.message)
+          if (!progress.running) {
+            finalProgress = progress
+            break
+          }
+          await new Promise((resolve) => setTimeout(resolve, 400))
         }
-
-        await new Promise((resolve) => setTimeout(resolve, 400))
       }
 
       setToolchainStatus(await toolchains.status(requiredToolchain))
@@ -833,10 +953,13 @@ function App({
           onInstallToolchain={installRequiredToolchain}
           onOpenRecent={openRecentProject}
           onSelectFile={selectFile}
+          onSearch={searchProject}
+          onSelectSearchResult={openSearchResult}
           projectName={project.name}
           projectPath={project.path}
           recentProjects={recentProjects}
           serverStatus={serverStatus}
+          searchResults={searchResults}
           toolchainStatus={toolchainStatus}
         />
 
@@ -878,11 +1001,13 @@ function App({
                           client: language,
                           projectPath: project.path,
                           relativePath: activeFile.path,
+                          openLocation,
                         }
                       : null
                   }
                   onChange={updateActiveFile}
                   onCursorChange={(lineNumber, column) => setCursor({ lineNumber, column })}
+                  revealPosition={revealPosition}
                 />
               </Suspense>
             ) : (
@@ -896,9 +1021,11 @@ function App({
 
         <ProofPanel
           column={cursor.column}
-          diagnosticCount={diagnostics.length}
+          diagnostics={diagnostics}
+          messages={serverMessages}
           lineNumber={cursor.lineNumber}
           proofState={proofState}
+          processing={isElaborating}
         />
       </main>
 

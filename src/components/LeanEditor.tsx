@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import Editor, { loader, type Monaco, type OnMount } from '@monaco-editor/react'
 import * as monaco from 'monaco-editor/esm/vs/editor/editor.api'
 import EditorWorker from 'monaco-editor/esm/vs/editor/editor.worker?worker'
@@ -8,9 +8,11 @@ import {
   registerLeanLanguageProviders,
   type LeanLanguageContext,
 } from '../editor/leanLsp'
+import { findLeanAbbreviation } from '../editor/leanAbbreviations'
 import type { WorkspaceFile } from '../model/workspace'
 import { markOnce, performanceMarks } from '../performance'
 import type { LspDiagnostic } from '../services/languageClient'
+import type { DocumentChange } from '../services/languageClient'
 
 const workerScope = self as typeof self & {
   MonacoEnvironment: { getWorker: () => Worker }
@@ -26,8 +28,9 @@ interface LeanEditorProps {
   diagnostics?: LspDiagnostic[]
   file: WorkspaceFile
   languageContext?: LeanLanguageContext | null
-  onChange: (content: string) => void
+  onChange: (content: string, changes: DocumentChange[]) => void
   onCursorChange: (lineNumber: number, column: number) => void
+  revealPosition?: { lineNumber: number; column: number } | null
 }
 
 export function LeanEditor({
@@ -36,7 +39,11 @@ export function LeanEditor({
   languageContext = null,
   onChange,
   onCursorChange,
+  revealPosition = null,
 }: LeanEditorProps) {
+  const [darkAppearance, setDarkAppearance] = useState(
+    () => window.matchMedia('(prefers-color-scheme: dark)').matches,
+  )
   const editorRef = useRef<monaco.editor.IStandaloneCodeEditor | null>(null)
   const monacoRef = useRef<Monaco | null>(null)
   const languageContextRef = useRef(languageContext)
@@ -46,11 +53,25 @@ export function LeanEditor({
   }, [languageContext])
 
   useEffect(() => {
+    const media = window.matchMedia('(prefers-color-scheme: dark)')
+    const update = () => setDarkAppearance(media.matches)
+    media.addEventListener('change', update)
+    return () => media.removeEventListener('change', update)
+  }, [])
+
+  useEffect(() => {
     const model = editorRef.current?.getModel()
     if (model && monacoRef.current) {
       applyLeanDiagnostics(monacoRef.current, model, diagnostics)
     }
   }, [diagnostics, file.id])
+
+  useEffect(() => {
+    if (!revealPosition || !editorRef.current) return
+    editorRef.current.setPosition(revealPosition)
+    editorRef.current.revealPositionInCenter(revealPosition)
+    editorRef.current.focus()
+  }, [file.id, revealPosition])
 
   function handleBeforeMount(monacoInstance: Monaco) {
     configureLeanLanguage(monacoInstance)
@@ -69,6 +90,62 @@ export function LeanEditor({
     if (model) {
       applyLeanDiagnostics(monacoInstance, model, diagnostics)
     }
+
+    const expandAbbreviation = (
+      triggerLength = 0,
+      changedPosition?: { lineNumber: number; column: number },
+    ) => {
+      const position = changedPosition ?? editor.getPosition()
+      const activeModel = editor.getModel()
+      if (!position || !activeModel) {
+        return false
+      }
+
+      const linePrefix = activeModel.getLineContent(position.lineNumber)
+        .slice(0, position.column - 1)
+      const match = findLeanAbbreviation(linePrefix, triggerLength)
+      if (!match) {
+        return false
+      }
+
+      editor.pushUndoStop()
+      editor.executeEdits('lean-unicode-input', [{
+        range: new monacoInstance.Range(
+          position.lineNumber,
+          match.startColumn,
+          position.lineNumber,
+          match.endColumn,
+        ),
+        text: match.replacement,
+        forceMoveMarkers: true,
+      }])
+      editor.pushUndoStop()
+      if (match.cursorOffset !== undefined) {
+        editor.setPosition({
+          lineNumber: position.lineNumber,
+          column: match.startColumn + match.cursorOffset,
+        })
+      }
+      return true
+    }
+
+    editor.onDidChangeModelContent(({ changes }) => {
+      if (changes.length !== 1) {
+        return
+      }
+      const text = changes[0].text
+      if (/^[\s,;:.)\]}]$/.test(text)) {
+        expandAbbreviation(text.length, {
+          lineNumber: changes[0].range.startLineNumber,
+          column: changes[0].range.startColumn + text.length,
+        })
+      }
+    })
+    editor.addCommand(monacoInstance.KeyCode.Tab, () => {
+      if (!expandAbbreviation()) {
+        editor.trigger('keyboard', 'tab', null)
+      }
+    })
 
     if (import.meta.env.MODE === 'e2e') {
       const revealLine = (event: Event) => {
@@ -99,10 +176,26 @@ export function LeanEditor({
   return (
     <Editor
       beforeMount={handleBeforeMount}
+      defaultValue={file.content}
       defaultLanguage="lean4"
       height="100%"
       language="lean4"
-      onChange={(content) => onChange(content ?? '')}
+      onChange={(content, event) => onChange(
+        content ?? '',
+        event.changes.map((change) => ({
+          range: {
+            start: {
+              line: change.range.startLineNumber - 1,
+              character: change.range.startColumn - 1,
+            },
+            end: {
+              line: change.range.endLineNumber - 1,
+              character: change.range.endColumn - 1,
+            },
+          },
+          text: change.text,
+        })),
+      )}
       onMount={handleMount}
       options={{
         automaticLayout: true,
@@ -124,11 +217,11 @@ export function LeanEditor({
         stickyScroll: { enabled: false },
         tabSize: 2,
         wordWrap: 'on',
+        readOnly: file.readOnly,
       }}
       path={file.path}
       saveViewState
-      theme="leanlander"
-      value={file.content}
+      theme={darkAppearance ? 'leanlander-dark' : 'leanlander'}
     />
   )
 }

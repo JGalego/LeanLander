@@ -1,4 +1,5 @@
 import { invoke, isTauri } from '@tauri-apps/api/core'
+import { listen, type UnlistenFn } from '@tauri-apps/api/event'
 
 export type ProjectTemplate = 'lean' | 'mathlib'
 
@@ -33,6 +34,7 @@ export interface LakeClient {
   build(projectPath: string, requiredToolchain: string | null): Promise<void>
   progress(): Promise<LakeProgress>
   cancel(): Promise<void>
+  onProgress?(handler: (progress: LakeProgress) => void): Promise<UnlistenFn>
 }
 
 export const idleLakeProgress: LakeProgress = {
@@ -78,5 +80,11 @@ export const lakeClient: LakeClient = {
     return isTauri()
       ? invoke('cancel_lake_operation')
       : Promise.resolve()
+  },
+
+  onProgress(handler) {
+    return isTauri()
+      ? listen<LakeProgress>('lake-progress', ({ payload }) => handler(payload))
+      : Promise.resolve(() => undefined)
   },
 }

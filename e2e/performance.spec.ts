@@ -22,6 +22,13 @@ test('profiles startup and large-file editor memory', async ({ context, page }, 
 
   try {
     await session.send('Performance.enable')
+    project.fixture.project.files.push(...Array.from({ length: 5_000 }, (_, index) => ({
+      id: `Mathlib/Analysis/Generated${index}.lean`,
+      name: `Generated${index}.lean`,
+      path: `Mathlib/Analysis/Generated${index}.lean`,
+      content: '',
+      loaded: false,
+    })))
     await installFixture(page, project.fixture)
     await page.goto('/')
     await expect(page.locator('html')).toHaveAttribute('data-e2e-harness', 'ready')

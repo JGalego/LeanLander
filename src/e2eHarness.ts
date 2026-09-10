@@ -11,7 +11,7 @@ const readyToolchain = {
   activeToolchain: 'leanprover/lean4:v4.19.0',
   installedToolchains: [],
   repairs: [],
-}
+} satisfies NonNullable<E2eFixture['toolchainStatus']>
 
 const readyServer = {
   state: 'ready',
@@ -44,7 +44,10 @@ export function installE2eHarness() {
   }
   const fixture = JSON.parse(serialized) as E2eFixture
   const files = new Map(fixture.project.files.map((file) => [file.path, { ...file }]))
+  const dependencyFiles = new Map(Object.entries(fixture.dependencyFiles ?? {}))
+  let syncCount = 0
   let lakeProgress = fixture.lakeProgress ?? idleLakeProgress
+  let toolchainStatus = fixture.toolchainStatus
 
   Object.defineProperty(globalThis, 'isTauri', {
     configurable: true,
@@ -60,6 +63,25 @@ export function installE2eHarness() {
         return fixture.project
       case 'load_project_file':
         return files.get(String(args.relativePath)) ?? null
+      case 'load_project_uri': {
+        const uri = decodeURIComponent(String(args.uri))
+        const dependency = [...dependencyFiles.entries()]
+          .find(([path]) => uri.endsWith(path))?.[1]
+        if (dependency) return dependency
+        return [...files.values()].find((file) => uri.endsWith(`/${file.path}`)) ?? null
+      }
+      case 'search_project': {
+        const query = String(args.query)
+        return [...files.values()].flatMap((file) => file.content
+          .split('\n')
+          .map((line, index) => ({ line, index }))
+          .filter(({ line }) => line.includes(query))
+          .map(({ line, index }) => ({
+            path: file.path,
+            line: index + 1,
+            preview: line.trim(),
+          })))
+      }
       case 'save_project_file': {
         const path = String(args.relativePath)
         const file = files.get(path)
@@ -74,9 +96,15 @@ export function installE2eHarness() {
         return {
           ...readyToolchain,
           requiredToolchain: fixture.project.metadata.leanToolchain,
-          ...fixture.toolchainStatus,
+          ...toolchainStatus,
         }
       case 'install_toolchain':
+        toolchainStatus = {
+          ...readyToolchain,
+          requiredToolchain: fixture.project.metadata.leanToolchain,
+          activeToolchain: fixture.project.metadata.leanToolchain,
+        }
+        return null
       case 'cancel_toolchain_install':
         return null
       case 'toolchain_install_progress':
@@ -97,6 +125,8 @@ export function installE2eHarness() {
       case 'close_lean_document':
         return null
       case 'sync_lean_document':
+        syncCount += 1
+        document.documentElement.dataset.syncCount = String(syncCount)
         return Number(args.version)
       case 'lean_diagnostics':
         return fixture.diagnostics?.[String(args.relativePath)] ?? []

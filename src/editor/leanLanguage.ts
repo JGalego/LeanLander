@@ -134,6 +134,32 @@ export function configureLeanLanguage(monaco: Monaco) {
       'editorWhitespace.foreground': '#DCE1DA',
     },
   })
+  monaco.editor.defineTheme('leanlander-dark', {
+    base: 'vs-dark',
+    inherit: true,
+    rules: [
+      { token: 'comment', foreground: '92A397', fontStyle: 'italic' },
+      { token: 'comment.doc', foreground: 'A6B8AA', fontStyle: 'italic' },
+      { token: 'identifier', foreground: 'E3EAE4' },
+      { token: 'keyword', foreground: 'F0A090', fontStyle: 'bold' },
+      { token: 'keyword.tactic', foreground: '64D1B5', fontStyle: 'bold' },
+      { token: 'number', foreground: 'E6BA72' },
+      { token: 'operator', foreground: '8BCDBB' },
+      { token: 'string', foreground: 'DDA477' },
+    ],
+    colors: {
+      'editor.background': '#151B18',
+      'editor.foreground': '#E3EAE4',
+      'editor.lineHighlightBackground': '#1D2722',
+      'editorLineNumber.foreground': '#66736B',
+      'editorLineNumber.activeForeground': '#B1C0B6',
+      'editor.selectionBackground': '#275D50',
+      'editor.inactiveSelectionBackground': '#243F37',
+      'editorCursor.foreground': '#62D0B3',
+      'editorIndentGuide.background1': '#2A342F',
+      'editorWhitespace.foreground': '#303B35',
+    },
+  })
 
   configured = true
 }

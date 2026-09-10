@@ -3,6 +3,8 @@ export interface WorkspaceFile {
   name: string
   path: string
   content: string
+  loaded?: boolean
+  readOnly?: boolean
 }
 
 export interface Workspace {
@@ -16,11 +18,32 @@ export interface Hypothesis {
   type: string
 }
 
-export interface ProofState {
+export interface ProofGoal {
   declaration: string
-  goalCount: number
   hypotheses: Hypothesis[]
+  target: string
+}
+
+export interface ProofState {
+  goals?: ProofGoal[]
+  declaration?: string
+  goalCount?: number
+  hypotheses?: Hypothesis[]
   target?: string
+}
+
+export function proofGoals(state: ProofState): ProofGoal[] {
+  if (state.goals) {
+    return state.goals
+  }
+  if (!state.target || (state.goalCount ?? 0) === 0) {
+    return []
+  }
+  return [{
+    declaration: state.declaration ?? 'Active proof',
+    hypotheses: state.hypotheses ?? [],
+    target: state.target,
+  }]
 }
 
 export const sampleWorkspace: Workspace = {

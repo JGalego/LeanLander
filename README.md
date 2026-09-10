@@ -7,7 +7,7 @@
 <p align="center"><strong>There can be only one... Lean IDE.</strong></p>
 
 <p align="center">
-  <a href="https://github.com/JGalego/LeanLander/releases/tag/v0.1.0"><img alt="Release: v0.1.0" src="https://img.shields.io/badge/release-v0.1.0-2f855a"></a>
+  <a href="https://github.com/JGalego/LeanLander/releases/tag/v0.2.0"><img alt="Release: v0.2.0" src="https://img.shields.io/badge/release-v0.2.0-2f855a"></a>
   <img alt="Tauri 2" src="https://img.shields.io/badge/Tauri-2-24c8db?logo=tauri&logoColor=white">
   <img alt="React 19" src="https://img.shields.io/badge/React-19-087ea4?logo=react&logoColor=white">
   <a href="https://github.com/JGalego/LeanLander/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/JGalego/LeanLander/actions/workflows/ci.yml/badge.svg"></a>
@@ -16,7 +16,7 @@
 
 LeanLander is a focused, cross-platform desktop IDE for Lean 4. It aims to make opening a project and proving feel immediate, without asking users to become experts in Elan, Lake, or editor configuration first.
 
-**LeanLander v0.1.0 is available now** with cross-platform installers and checksums, temporary-project browser workflows, WCAG A/AA automation, and reproducible startup and editor-memory profiling. Lean Doctor reports Elan, toolchain, Lean, Lake, dependency, and server health, offers only explicit managed repairs, and keeps bounded process details hidden until requested. LeanLander can also create Lean or Mathlib Lake projects, optionally initialize Git, update dependencies, and run builds with progress, cancellation, and actionable failure messages. Real projects use one managed Lean server per workspace for document synchronization, diagnostics, language features, and cursor-position proof states. The bundled sample remains deterministic and works without native tools.
+**LeanLander v0.2.0 is being prepared** with Unicode abbreviation input, multiple proof goals, readable messages, event-driven Lean updates, lazy project loading, reusable document sessions, and automatic light/dark appearance.
 
 ## Proof Corpus Walkthroughs
 
@@ -26,24 +26,24 @@ Reproducible scripted sessions navigate pinned source from OpenAI's Navier-Stoke
 
 ## Installation
 
-Download LeanLander v0.1.0 from the [latest release](https://github.com/JGalego/LeanLander/releases/latest). Verify downloads against [SHA256SUMS.txt](https://github.com/JGalego/LeanLander/releases/latest/download/SHA256SUMS.txt). This release is ad-hoc signed on macOS and unsigned on Windows, so the operating system may show an unknown-publisher warning.
+LeanLander is distributed only through GitHub Releases and the commands below, not through app stores or operating-system package repositories. Download v0.2.0 from the [latest release](https://github.com/JGalego/LeanLander/releases/latest) and verify it against [SHA256SUMS.txt](https://github.com/JGalego/LeanLander/releases/latest/download/SHA256SUMS.txt). These community builds are not code-signed or notarized, so macOS or Windows may show an unidentified-developer warning.
 
 ### Linux 🐧
 
 On Debian or Ubuntu x86_64, download and install the Debian package:
 
 ```bash
-curl --fail --location --output /tmp/LeanLander_0.1.0_linux_amd64.deb https://github.com/JGalego/LeanLander/releases/latest/download/LeanLander_0.1.0_linux_amd64.deb && sudo apt install /tmp/LeanLander_0.1.0_linux_amd64.deb
+curl --fail --location --output /tmp/LeanLander_0.2.0_linux_amd64.deb https://github.com/JGalego/LeanLander/releases/latest/download/LeanLander_0.2.0_linux_amd64.deb && sudo apt install /tmp/LeanLander_0.2.0_linux_amd64.deb
 ```
 
-Other x86_64 distributions can use the [AppImage](https://github.com/JGalego/LeanLander/releases/latest/download/LeanLander_0.1.0_linux_amd64.AppImage).
+Other x86_64 distributions can use the [AppImage](https://github.com/JGalego/LeanLander/releases/latest/download/LeanLander_0.2.0_linux_amd64.AppImage).
 
 ### macOS 🍎
 
 This command selects the Apple Silicon or Intel disk image and opens it. Drag LeanLander into Applications when Finder appears.
 
 ```bash
-case "$(uname -m)" in arm64) asset="LeanLander_0.1.0_darwin_aarch64.dmg" ;; x86_64) asset="LeanLander_0.1.0_darwin_x64.dmg" ;; *) echo "Unsupported macOS architecture" >&2; exit 1 ;; esac && curl --fail --location --output "/tmp/$asset" "https://github.com/JGalego/LeanLander/releases/latest/download/$asset" && open "/tmp/$asset"
+case "$(uname -m)" in arm64) asset="LeanLander_0.2.0_darwin_aarch64.dmg" ;; x86_64) asset="LeanLander_0.2.0_darwin_x64.dmg" ;; *) echo "Unsupported macOS architecture" >&2; exit 1 ;; esac && curl --fail --location --output "/tmp/$asset" "https://github.com/JGalego/LeanLander/releases/latest/download/$asset" && open "/tmp/$asset"
 ```
 
 ### Windows 🪟
@@ -51,7 +51,7 @@ case "$(uname -m)" in arm64) asset="LeanLander_0.1.0_darwin_aarch64.dmg" ;; x86_
 From PowerShell on x64 Windows, download and launch the installer:
 
 ```powershell
-$installer = Join-Path $env:TEMP 'LeanLander_0.1.0_windows_x64-setup.exe'; Invoke-WebRequest -Uri 'https://github.com/JGalego/LeanLander/releases/latest/download/LeanLander_0.1.0_windows_x64-setup.exe' -OutFile $installer; Start-Process -FilePath $installer
+$installer = Join-Path $env:TEMP 'LeanLander_0.2.0_windows_x64-setup.exe'; Invoke-WebRequest -Uri 'https://github.com/JGalego/LeanLander/releases/latest/download/LeanLander_0.2.0_windows_x64-setup.exe' -OutFile $installer; Start-Process -FilePath $installer
 ```
 
 ## Development
@@ -103,7 +103,7 @@ src-tauri/
 docs/
   architecture.md   System boundaries and integration strategy
   demos.md          Pinned proof-corpus walkthroughs and attribution
-  releasing.md      Release signing and performance baseline
+  releasing.md      Release process and performance baseline
   roadmap.md        Milestone status and next work
 ```
 

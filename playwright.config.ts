@@ -1,5 +1,7 @@
 import { defineConfig, devices } from '@playwright/test'
 
+const recordVideo = process.env.PLAYWRIGHT_VIDEO === '1'
+
 export default defineConfig({
   testDir: './e2e',
   fullyParallel: true,
@@ -13,7 +15,7 @@ export default defineConfig({
     baseURL: 'http://127.0.0.1:1422',
     screenshot: 'only-on-failure',
     trace: 'retain-on-failure',
-    video: 'retain-on-failure',
+    video: recordVideo ? 'on' : 'retain-on-failure',
   },
   projects: [
     {

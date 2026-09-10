@@ -1,5 +1,6 @@
 use super::{ServiceError, ServiceResult};
 use serde::Serialize;
+use serde_json::Value;
 use std::{
     env,
     io::{BufRead, BufReader},
@@ -9,6 +10,8 @@ use std::{
     thread,
     time::Duration,
 };
+
+type EventSink = Arc<dyn Fn(&str, Value) + Send + Sync>;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -64,9 +67,15 @@ impl Default for InstallProgress {
 pub struct ToolchainManager {
     child: Arc<Mutex<Option<Child>>>,
     progress: Arc<Mutex<InstallProgress>>,
+    event_sink: Mutex<Option<EventSink>>,
 }
 
 impl ToolchainManager {
+    pub fn set_event_sink(&self, sink: EventSink) -> ServiceResult<()> {
+        *self.event_sink.lock().map_err(lock_error)? = Some(sink);
+        Ok(())
+    }
+
     pub fn start_install(&self, toolchain: &str) -> ServiceResult<()> {
         validate_toolchain_name(toolchain)?;
         let elan = find_elan().ok_or_else(missing_elan_error)?;
@@ -95,6 +104,7 @@ impl ToolchainManager {
 
         update_progress(
             &self.progress,
+            self.event_sink.lock().map_err(lock_error)?.as_ref(),
             InstallProgress {
                 stage: "installing".to_owned(),
                 message: format!("Installing {toolchain}…"),
@@ -104,15 +114,24 @@ impl ToolchainManager {
         )?;
 
         if let Some(stdout) = stdout {
-            stream_output(stdout, Arc::clone(&self.progress));
+            stream_output(
+                stdout,
+                Arc::clone(&self.progress),
+                self.event_sink.lock().map_err(lock_error)?.clone(),
+            );
         }
         if let Some(stderr) = stderr {
-            stream_output(stderr, Arc::clone(&self.progress));
+            stream_output(
+                stderr,
+                Arc::clone(&self.progress),
+                self.event_sink.lock().map_err(lock_error)?.clone(),
+            );
         }
 
         let child = Arc::clone(&self.child);
         let progress = Arc::clone(&self.progress);
         let toolchain = toolchain.to_owned();
+        let event_sink = self.event_sink.lock().map_err(lock_error)?.clone();
         thread::spawn(move || loop {
             let process_state = {
                 let mut guard = match child.lock() {
@@ -137,6 +156,7 @@ impl ToolchainManager {
             if let Some(succeeded) = process_state {
                 let _ = update_progress(
                     &progress,
+                    event_sink.as_ref(),
                     InstallProgress {
                         stage: if succeeded { "complete" } else { "failed" }.to_owned(),
                         message: if succeeded {
@@ -181,6 +201,7 @@ impl ToolchainManager {
         *child = None;
         update_progress(
             &self.progress,
+            self.event_sink.lock().map_err(lock_error)?.as_ref(),
             InstallProgress {
                 stage: "cancelled".to_owned(),
                 message: "Toolchain installation cancelled.".to_owned(),
@@ -381,7 +402,7 @@ pub(crate) fn validate_toolchain_name(toolchain: &str) -> ServiceResult<()> {
     }
 }
 
-fn stream_output<R>(reader: R, progress: Arc<Mutex<InstallProgress>>)
+fn stream_output<R>(reader: R, progress: Arc<Mutex<InstallProgress>>, event_sink: Option<EventSink>)
 where
     R: std::io::Read + Send + 'static,
 {
@@ -393,6 +414,7 @@ where
             if let Ok(mut current) = progress.lock() {
                 if current.running {
                     current.message = line;
+                    emit_progress(event_sink.as_ref(), &current);
                 }
             }
         }
@@ -401,10 +423,18 @@ where
 
 fn update_progress(
     progress: &Arc<Mutex<InstallProgress>>,
+    event_sink: Option<&EventSink>,
     value: InstallProgress,
 ) -> ServiceResult<()> {
-    *progress.lock().map_err(lock_error)? = value;
+    *progress.lock().map_err(lock_error)? = value.clone();
+    emit_progress(event_sink, &value);
     Ok(())
+}
+
+fn emit_progress(event_sink: Option<&EventSink>, progress: &InstallProgress) {
+    if let (Some(sink), Ok(payload)) = (event_sink, serde_json::to_value(progress)) {
+        sink("toolchain-progress", payload);
+    }
 }
 
 fn lock_error<T>(error: std::sync::PoisonError<T>) -> ServiceError {

@@ -25,6 +25,7 @@ const MAX_LOG_LINES: usize = 200;
 const MAX_MESSAGE_BYTES: usize = 64 * 1024 * 1024;
 
 type PendingRequests = Arc<Mutex<HashMap<u64, mpsc::Sender<Result<Value, String>>>>>;
+type EventSink = Arc<dyn Fn(&str, Value) + Send + Sync>;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -58,9 +59,17 @@ pub enum LanguageFeature {
     DocumentSymbols,
 }
 
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DocumentChange {
+    pub range: Value,
+    pub text: String,
+}
+
 #[derive(Default)]
 pub struct ServerManager {
     servers: Mutex<HashMap<PathBuf, Arc<ServerConnection>>>,
+    event_sink: Mutex<Option<EventSink>>,
 }
 
 struct ServerConnection {
@@ -76,6 +85,11 @@ struct ServerConnection {
 }
 
 impl ServerManager {
+    pub fn set_event_sink(&self, sink: EventSink) -> ServiceResult<()> {
+        *self.event_sink.lock().map_err(server_lock_error)? = Some(sink);
+        Ok(())
+    }
+
     pub fn start(
         &self,
         project_path: &Path,
@@ -95,7 +109,8 @@ impl ServerManager {
         }
 
         let toolchain = select_toolchain(required_toolchain)?;
-        let connection = Arc::new(ServerConnection::spawn(&root, &toolchain)?);
+        let event_sink = self.event_sink.lock().map_err(server_lock_error)?.clone();
+        let connection = Arc::new(ServerConnection::spawn(&root, &toolchain, event_sink)?);
         if let Err(error) = connection.initialize(&root) {
             let _ = connection.terminate();
             return Err(error);
@@ -142,10 +157,11 @@ impl ServerManager {
         relative_path: &Path,
         content: &str,
         version: i64,
+        changes: Option<Vec<DocumentChange>>,
     ) -> ServiceResult<i64> {
         let (root, source) = resolve_project_file(project_path, relative_path)?;
         self.connection(&root)?
-            .sync_document(file_uri(&source)?, content, version)
+            .sync_document(file_uri(&source)?, content, version, changes)
     }
 
     pub fn close_document(&self, project_path: &Path, relative_path: &Path) -> ServiceResult<()> {
@@ -209,7 +225,7 @@ impl ServerManager {
 }
 
 impl ServerConnection {
-    fn spawn(root: &Path, toolchain: &str) -> ServiceResult<Self> {
+    fn spawn(root: &Path, toolchain: &str, event_sink: Option<EventSink>) -> ServiceResult<Self> {
         let elan = find_elan().ok_or_else(|| {
             ServiceError::new(
                 "missing-elan",
@@ -263,6 +279,7 @@ impl ServerConnection {
             Arc::clone(&status),
             Arc::clone(&stderr_log),
             workspace_folders,
+            event_sink,
         );
         spawn_log_reader(stderr, Arc::clone(&stderr_log));
 
@@ -322,7 +339,13 @@ impl ServerConnection {
             .map_err(server_lock_error)
     }
 
-    fn sync_document(&self, uri: String, content: &str, version: i64) -> ServiceResult<i64> {
+    fn sync_document(
+        &self,
+        uri: String,
+        content: &str,
+        version: i64,
+        changes: Option<Vec<DocumentChange>>,
+    ) -> ServiceResult<i64> {
         let mut documents = self.documents.lock().map_err(server_lock_error)?;
         let next_version = documents
             .get(&uri)
@@ -332,9 +355,18 @@ impl ServerConnection {
 
         if documents.contains_key(&uri) {
             method = "textDocument/didChange";
+            let content_changes = changes
+                .filter(|changes| !changes.is_empty())
+                .map(|changes| {
+                    changes
+                        .into_iter()
+                        .map(|change| json!({"range": change.range, "text": change.text}))
+                        .collect::<Vec<_>>()
+                })
+                .unwrap_or_else(|| vec![json!({"text": content})]);
             params = json!({
                 "textDocument": {"uri": uri, "version": next_version},
-                "contentChanges": [{"text": content}]
+                "contentChanges": content_changes
             });
         } else {
             method = "textDocument/didOpen";
@@ -663,6 +695,7 @@ fn spawn_stdout_reader(
     status: Arc<Mutex<ServerStatus>>,
     log: Arc<Mutex<VecDeque<String>>>,
     workspace_folders: Value,
+    event_sink: Option<EventSink>,
 ) {
     thread::spawn(move || {
         let mut reader = BufReader::new(stdout);
@@ -695,12 +728,43 @@ fn spawn_stdout_reader(
                     if let Ok(mut all) = diagnostics.lock() {
                         all.insert(uri.to_owned(), values.clone());
                     }
+                    if let Some(sink) = &event_sink {
+                        sink(
+                            "lean-diagnostics",
+                            json!({
+                                "uri": uri,
+                                "diagnostics": values,
+                            }),
+                        );
+                    }
+                }
+                continue;
+            }
+            if method == "$/lean/fileProgress" {
+                if let Some(sink) = &event_sink {
+                    sink(
+                        "lean-file-progress",
+                        message.get("params").cloned().unwrap_or(Value::Null),
+                    );
                 }
                 continue;
             }
             if matches!(method, "window/logMessage" | "window/showMessage") {
-                if let Some(message) = message.pointer("/params/message").and_then(Value::as_str) {
-                    push_log_line(&log, message.to_owned());
+                let severity = message
+                    .pointer("/params/type")
+                    .and_then(Value::as_u64)
+                    .unwrap_or(3);
+                if let Some(text) = message.pointer("/params/message").and_then(Value::as_str) {
+                    push_log_line(&log, text.to_owned());
+                    if let Some(sink) = &event_sink {
+                        sink(
+                            "lean-message",
+                            json!({
+                                "message": text,
+                                "severity": severity,
+                            }),
+                        );
+                    }
                 }
                 continue;
             }
@@ -870,21 +934,21 @@ pub struct Hypothesis {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct ProofState {
+pub struct ProofGoal {
     pub declaration: String,
-    pub goal_count: usize,
     pub hypotheses: Vec<Hypothesis>,
-    pub target: Option<String>,
+    pub target: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProofState {
+    pub goals: Vec<ProofGoal>,
 }
 
 impl ProofState {
     fn empty() -> Self {
-        Self {
-            declaration: "No active declaration".to_owned(),
-            goal_count: 0,
-            hypotheses: Vec::new(),
-            target: None,
-        }
+        Self { goals: Vec::new() }
     }
 }
 
@@ -946,48 +1010,50 @@ fn proof_state_from_rpc(value: &Value) -> ServiceResult<ProofState> {
         .get("goals")
         .and_then(Value::as_array)
         .ok_or_else(|| protocol_error("Interactive goals did not contain a goals array."))?;
-    let Some(goal) = goals.first() else {
-        return Ok(ProofState::empty());
-    };
-    let target = goal
-        .get("type")
-        .map(flatten_tagged_text)
-        .filter(|text| !text.is_empty());
-    let declaration = goal
-        .get("userName?")
-        .and_then(Value::as_str)
-        .filter(|name| !name.is_empty())
-        .map(|name| format!("case {name}"))
-        .unwrap_or_else(|| "Active proof".to_owned());
-    let hypotheses = goal
-        .get("hyps")
-        .and_then(Value::as_array)
-        .into_iter()
-        .flatten()
-        .flat_map(|hypothesis| {
-            let r#type = hypothesis
+    let goals = goals
+        .iter()
+        .filter_map(|goal| {
+            let target = goal
                 .get("type")
                 .map(flatten_tagged_text)
-                .unwrap_or_default();
-            hypothesis
-                .get("names")
+                .filter(|text| !text.is_empty())?;
+            let declaration = goal
+                .get("userName?")
+                .and_then(Value::as_str)
+                .filter(|name| !name.is_empty())
+                .map(|name| format!("case {name}"))
+                .unwrap_or_else(|| "Active proof".to_owned());
+            let hypotheses = goal
+                .get("hyps")
                 .and_then(Value::as_array)
                 .into_iter()
                 .flatten()
-                .filter_map(Value::as_str)
-                .map(move |name| Hypothesis {
-                    name: name.to_owned(),
-                    r#type: r#type.clone(),
+                .flat_map(|hypothesis| {
+                    let r#type = hypothesis
+                        .get("type")
+                        .map(flatten_tagged_text)
+                        .unwrap_or_default();
+                    hypothesis
+                        .get("names")
+                        .and_then(Value::as_array)
+                        .into_iter()
+                        .flatten()
+                        .filter_map(Value::as_str)
+                        .map(move |name| Hypothesis {
+                            name: name.to_owned(),
+                            r#type: r#type.clone(),
+                        })
                 })
+                .collect();
+            Some(ProofGoal {
+                declaration,
+                hypotheses,
+                target,
+            })
         })
         .collect();
 
-    Ok(ProofState {
-        declaration,
-        goal_count: goals.len(),
-        hypotheses,
-        target,
-    })
+    Ok(ProofState { goals })
 }
 
 fn proof_state_from_plain_goal(value: &Value) -> ServiceResult<ProofState> {
@@ -1027,10 +1093,15 @@ fn proof_state_from_plain_goal(value: &Value) -> ServiceResult<ProofState> {
         .collect();
 
     Ok(ProofState {
-        declaration,
-        goal_count: usize::from(target.is_some()),
-        hypotheses,
-        target,
+        goals: target
+            .map(|target| {
+                vec![ProofGoal {
+                    declaration,
+                    hypotheses,
+                    target,
+                }]
+            })
+            .unwrap_or_default(),
     })
 }
 
@@ -1116,19 +1187,27 @@ mod tests {
         assert_eq!(
             proof_state_from_rpc(&response).unwrap(),
             ProofState {
-                declaration: "case succ".to_owned(),
-                goal_count: 2,
-                hypotheses: vec![
-                    Hypothesis {
-                        name: "n".to_owned(),
-                        r#type: "Nat → Nat".to_owned(),
+                goals: vec![
+                    ProofGoal {
+                        declaration: "case succ".to_owned(),
+                        hypotheses: vec![
+                            Hypothesis {
+                                name: "n".to_owned(),
+                                r#type: "Nat → Nat".to_owned(),
+                            },
+                            Hypothesis {
+                                name: "ih".to_owned(),
+                                r#type: "Nat → Nat".to_owned(),
+                            },
+                        ],
+                        target: "n + 0 = n".to_owned(),
                     },
-                    Hypothesis {
-                        name: "ih".to_owned(),
-                        r#type: "Nat → Nat".to_owned(),
+                    ProofGoal {
+                        declaration: "Active proof".to_owned(),
+                        hypotheses: Vec::new(),
+                        target: "False".to_owned(),
                     },
                 ],
-                target: Some("n + 0 = n".to_owned()),
             }
         );
     }
@@ -1152,19 +1231,20 @@ mod tests {
         assert_eq!(
             proof_state_from_plain_goal(&response).unwrap(),
             ProofState {
-                declaration: "case intro".to_owned(),
-                goal_count: 1,
-                hypotheses: vec![
-                    Hypothesis {
-                        name: "p".to_owned(),
-                        r#type: "Prop".to_owned(),
-                    },
-                    Hypothesis {
-                        name: "h".to_owned(),
-                        r#type: "p".to_owned(),
-                    },
-                ],
-                target: Some("p".to_owned()),
+                goals: vec![ProofGoal {
+                    declaration: "case intro".to_owned(),
+                    hypotheses: vec![
+                        Hypothesis {
+                            name: "p".to_owned(),
+                            r#type: "Prop".to_owned(),
+                        },
+                        Hypothesis {
+                            name: "h".to_owned(),
+                            r#type: "p".to_owned(),
+                        },
+                    ],
+                    target: "p".to_owned(),
+                }],
             }
         );
     }
@@ -1227,7 +1307,7 @@ mod tests {
         let status = manager.start(&root, Some(&toolchain)).unwrap();
         assert_eq!(status.state, "ready");
         manager
-            .sync_document(&root, Path::new("Main.lean"), source, 1)
+            .sync_document(&root, Path::new("Main.lean"), source, 1, None)
             .unwrap();
         let (_, source_path) = resolve_project_file(&root, Path::new("Main.lean")).unwrap();
         let connection = manager.connection(&root.canonicalize().unwrap()).unwrap();
@@ -1237,8 +1317,14 @@ mod tests {
         println!("interactive goals: {response:#}");
         let proof = proof_state_from_rpc(&response).unwrap();
 
-        assert_eq!(proof.target.as_deref(), Some("p"));
+        assert_eq!(
+            proof.goals.first().map(|goal| goal.target.as_str()),
+            Some("p")
+        );
         assert!(proof
+            .goals
+            .first()
+            .unwrap()
             .hypotheses
             .iter()
             .any(|hypothesis| hypothesis.name == "h"));

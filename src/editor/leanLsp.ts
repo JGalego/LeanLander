@@ -18,6 +18,7 @@ export interface LeanLanguageContext {
   client: LanguageClient
   projectPath: string
   relativePath: string
+  openLocation?: (uri: string, range: LspRange) => void
 }
 
 interface Disposable {
@@ -81,7 +82,7 @@ export function registerLeanLanguageProviders(
       },
     }),
     monaco.languages.registerDefinitionProvider('lean4', {
-      async provideDefinition(_model, position) {
+      async provideDefinition(model, position) {
         const context = getContext()
         if (!context) {
           return null
@@ -89,17 +90,17 @@ export function registerLeanLanguageProviders(
         const response = await requestOrNull<
           LspLocation | LspLocation[] | LspLocationLink[]
         >(context, 'definition', position)
-        return locations(monaco, response)
+        return openOrReturnLocations(monaco, context, model.uri.toString(), response)
       },
     }),
     monaco.languages.registerReferenceProvider('lean4', {
-      async provideReferences(_model, position) {
+      async provideReferences(model, position) {
         const context = getContext()
         if (!context) {
           return null
         }
         const response = await requestOrNull<LspLocation[]>(context, 'references', position)
-        return locations(monaco, response)
+        return openOrReturnLocations(monaco, context, model.uri.toString(), response)
       },
     }),
     monaco.languages.registerDocumentSymbolProvider('lean4', {
@@ -124,6 +125,24 @@ export function registerLeanLanguageProviders(
       providers.forEach((provider) => provider.dispose())
     },
   }
+}
+
+export function openOrReturnLocations(
+  monaco: Monaco,
+  context: LeanLanguageContext,
+  currentUri: string,
+  response: LspLocation | LspLocation[] | LspLocationLink[] | null,
+) {
+  if (!response) return null
+  const values = Array.isArray(response) ? response : [response]
+  const target = values[0]
+  const uri = 'targetUri' in target ? target.targetUri : target.uri
+  const range = 'targetUri' in target ? target.targetSelectionRange : target.range
+  if (context.openLocation && uri !== currentUri) {
+    context.openLocation(uri, range)
+    return null
+  }
+  return locations(monaco, response)
 }
 
 export function applyLeanDiagnostics(

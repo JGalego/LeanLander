@@ -13,6 +13,20 @@ export interface ProjectMetadata {
 export interface DiscoveredProject {
   metadata: ProjectMetadata
   files: WorkspaceFile[]
+  tree?: ProjectTreeNode[]
+}
+
+export interface ProjectTreeNode {
+  name: string
+  path: string
+  kind: 'directory' | 'file'
+  children: ProjectTreeNode[]
+}
+
+export interface ProjectSearchResult {
+  path: string
+  line: number
+  preview: string
 }
 
 export interface RecentProject {
@@ -24,6 +38,8 @@ export interface RecentProject {
 export interface ProjectClient {
   discoverProject(path: string): Promise<DiscoveredProject>
   loadFile(projectPath: string, relativePath: string): Promise<WorkspaceFile>
+  loadUri?(projectPath: string, uri: string): Promise<WorkspaceFile>
+  search?(projectPath: string, query: string): Promise<ProjectSearchResult[]>
   saveFile(projectPath: string, relativePath: string, content: string): Promise<void>
   recentProjects(): Promise<RecentProject[]>
 }
@@ -55,6 +71,14 @@ export const projectClient: ProjectClient = {
       projectPath,
       relativePath,
     })
+  },
+
+  loadUri(projectPath, uri) {
+    return invoke<WorkspaceFile>('load_project_uri', { projectPath, uri })
+  },
+
+  search(projectPath, query) {
+    return invoke<ProjectSearchResult[]>('search_project', { projectPath, query })
   },
 
   saveFile(projectPath, relativePath, content) {

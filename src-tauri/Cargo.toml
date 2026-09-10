@@ -1,6 +1,6 @@
 [package]
 name = "leanlander"
-version = "0.1.0"
+version = "0.2.0"
 description = "A focused desktop IDE for Lean 4"
 authors = ["LeanLander contributors"]
 license = "MIT"

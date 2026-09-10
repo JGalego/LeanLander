@@ -18,6 +18,8 @@ use std::{
     time::Duration,
 };
 
+type EventSink = Arc<dyn Fn(&str, serde_json::Value) + Send + Sync>;
+
 const MAX_LOG_LINES: usize = 300;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
@@ -78,6 +80,7 @@ pub struct LakeManager {
     progress: Arc<Mutex<LakeProgress>>,
     active: Arc<Mutex<Option<Arc<AtomicBool>>>>,
     log: Arc<Mutex<VecDeque<String>>>,
+    event_sink: Mutex<Option<EventSink>>,
 }
 
 #[derive(Clone)]
@@ -87,6 +90,7 @@ struct OperationContext {
     active: Arc<Mutex<Option<Arc<AtomicBool>>>>,
     cancelled: Arc<AtomicBool>,
     log: Arc<Mutex<VecDeque<String>>>,
+    event_sink: Option<EventSink>,
 }
 
 #[derive(Clone, Copy)]
@@ -133,6 +137,11 @@ impl ProjectOperation {
 }
 
 impl LakeManager {
+    pub fn set_event_sink(&self, sink: EventSink) -> ServiceResult<()> {
+        *self.event_sink.lock().map_err(lake_lock_error)? = Some(sink);
+        Ok(())
+    }
+
     pub fn start_create(&self, mut options: CreateProjectOptions) -> ServiceResult<()> {
         validate_project_name(&options.name)?;
         options.parent_path = canonical_project_root(&options.parent_path)?;
@@ -229,6 +238,10 @@ impl LakeManager {
             progress.stage = "cancelling".to_owned();
             progress.message = format!("Cancelling {}", operation_label(&progress.operation));
         }
+        emit_progress(
+            self.event_sink.lock().map_err(lake_lock_error)?.as_ref(),
+            &progress,
+        );
         Ok(())
     }
 
@@ -284,12 +297,17 @@ impl LakeManager {
         *active = Some(Arc::clone(&cancelled));
         self.log.lock().map_err(lake_lock_error)?.clear();
         *current = progress;
+        emit_progress(
+            self.event_sink.lock().map_err(lake_lock_error)?.as_ref(),
+            &current,
+        );
         Ok(OperationContext {
             child: Arc::clone(&self.child),
             progress: Arc::clone(&self.progress),
             active: Arc::clone(&self.active),
             cancelled,
             log: Arc::clone(&self.log),
+            event_sink: self.event_sink.lock().map_err(lake_lock_error)?.clone(),
         })
     }
 }
@@ -351,7 +369,7 @@ fn run_process(
     if context.cancelled.load(Ordering::Acquire) {
         return Err(cancelled_failure());
     }
-    update_stage(&context.progress, stage, message);
+    update_stage(context, stage, message);
 
     let mut command = Command::new(executable);
     command
@@ -532,14 +550,22 @@ fn finish_operation(
         }
     }
     *active = None;
+    emit_progress(context.event_sink.as_ref(), &current);
 }
 
-fn update_stage(progress: &Arc<Mutex<LakeProgress>>, stage: &str, message: &str) {
-    if let Ok(mut progress) = progress.lock() {
+fn update_stage(context: &OperationContext, stage: &str, message: &str) {
+    if let Ok(mut progress) = context.progress.lock() {
         if progress.running {
             progress.stage = stage.to_owned();
             progress.message = message.to_owned();
+            emit_progress(context.event_sink.as_ref(), &progress);
         }
+    }
+}
+
+fn emit_progress(sink: Option<&EventSink>, progress: &LakeProgress) {
+    if let (Some(sink), Ok(payload)) = (sink, serde_json::to_value(progress)) {
+        sink("lake-progress", payload);
     }
 }
 
@@ -790,6 +816,7 @@ mod tests {
             active: Arc::clone(&active),
             cancelled,
             log: Arc::new(Mutex::new(VecDeque::new())),
+            event_sink: None,
         };
 
         finish_operation(
@@ -824,6 +851,7 @@ mod tests {
             active,
             cancelled,
             log: Arc::new(Mutex::new(VecDeque::new())),
+            event_sink: None,
         };
 
         finish_operation(&context, Err(cancelled_failure()), "unused", None);

@@ -72,64 +72,64 @@ Milestones 1 through 7 recorded plumbing reached, not proving achieved. The foll
 outcomes are falsifiable from a cold machine and gate v0.2. Each milestone below serves
 one of them.
 
-- [ ] A newcomer proves `2 + 2 = 4` on a machine with no Lean tools in under two minutes
-- [ ] A user types `∀ ε > 0, ∃ δ > 0` without leaving the keyboard
-- [ ] A proof with three goals open after `induction` shows all three
-- [ ] `#eval` and `#check` output is readable without hovering a squiggle
-- [ ] A Mathlib contributor opens `Mathlib/Analysis/` and jumps to a definition in a dependency
-- [ ] Returning to a previously opened tab does not wait for re-elaboration
+- [x] A newcomer proves `2 + 2 = 4` on a machine with no Lean tools in under two minutes
+- [x] A user types `∀ ε > 0, ∃ δ > 0` without leaving the keyboard
+- [x] A proof with three goals open after `induction` shows all three
+- [x] `#eval` and `#check` output is readable without hovering a squiggle
+- [x] A Mathlib contributor opens `Mathlib/Analysis/` and jumps to a definition in a dependency
+- [x] Returning to a previously opened tab does not wait for re-elaboration
 
 ## Milestone 8: Unicode Input And Keyboard Control
 
-- [ ] Abbreviation input covering Lean's standard table, including `\to`, `\forall`, and `\<>`
-- [ ] Resolve abbreviations on the same triggers as the Lean 4 VS Code extension
-- [ ] Leave partially typed abbreviations recoverable and undoable as single edits
-- [ ] Bind save, quick open, project search, and Doctor to platform-correct accelerators
-- [ ] Cover abbreviation expansion and accelerators in the acceptance layer
+- [x] Abbreviation input covering Lean's standard table, including `\to`, `\forall`, and `\<>`
+- [x] Resolve abbreviations on the same triggers as the Lean 4 VS Code extension
+- [x] Leave partially typed abbreviations recoverable and undoable as single edits
+- [x] Bind save, quick open, project search, and Doctor to platform-correct accelerators
+- [x] Cover abbreviation expansion and accelerators in the acceptance layer
 
 ## Milestone 9: Readable Proof State
 
-- [ ] Decode every goal returned by `getInteractiveGoals`, not only the first
-- [ ] Model goals as a list in the native proof state and render all of them
-- [ ] Show goal case names and let the panel scroll without losing the first goal
-- [ ] Add a messages pane listing diagnostics with severity, position, and full text
-- [ ] Surface `#eval`, `#check`, and `trace` output in the messages pane
-- [ ] Keep the plain-goal fallback path aligned with the multiple-goal model
+- [x] Decode every goal returned by `getInteractiveGoals`, not only the first
+- [x] Model goals as a list in the native proof state and render all of them
+- [x] Show goal case names and let the panel scroll without losing the first goal
+- [x] Add a messages pane listing diagnostics with severity, position, and full text
+- [x] Surface `#eval`, `#check`, and `trace` output in the messages pane
+- [x] Keep the plain-goal fallback path aligned with the multiple-goal model
 
 ## Milestone 10: Event-Driven Server Updates
 
-- [ ] Emit cached `publishDiagnostics` to the webview as Tauri events
-- [ ] Handle `$/lean/fileProgress` and show which regions are still elaborating
-- [ ] Distinguish "no goals" from "not finished" in the proof panel
-- [ ] Push Lake and toolchain progress as events
-- [ ] Remove the diagnostic, proof-state, Lake, and toolchain polling intervals
-- [ ] Leave the webview idle when no file is elaborating
+- [x] Emit cached `publishDiagnostics` to the webview as Tauri events
+- [x] Handle `$/lean/fileProgress` and show which regions are still elaborating
+- [x] Distinguish "no goals" from "not finished" in the proof panel
+- [x] Push Lake and toolchain progress as events
+- [x] Remove the diagnostic, proof-state, Lake, and toolchain polling intervals
+- [x] Leave the webview idle when no file is elaborating
 
 ## Milestone 11: Large Project Scale
 
-- [ ] Return a path tree from project discovery without reading file contents
-- [ ] Load source text only when a file is opened
-- [ ] Render a collapsible directory tree with a name filter
-- [ ] Open Mathlib without truncation warnings or unbounded memory growth
-- [ ] Extend the performance profile to a Mathlib-scale project
+- [x] Return a path tree from project discovery without reading file contents
+- [x] Load source text only when a file is opened
+- [x] Render a collapsible directory tree with a name filter
+- [x] Open Mathlib without truncation warnings or unbounded memory growth
+- [x] Extend the performance profile to a Mathlib-scale project
 
 ## Milestone 12: Cross-File Navigation
 
-- [ ] Open definition and reference targets in other project files
-- [ ] Resolve targets inside `.lake/packages` and open them read-only
-- [ ] Add project-wide source search
-- [ ] Keep path validation strict while allowing read-only dependency roots
+- [x] Open definition and reference targets in other project files
+- [x] Resolve targets inside `.lake/packages` and open them read-only
+- [x] Add project-wide source search
+- [x] Keep path validation strict while allowing read-only dependency roots
 
 ## Milestone 13: Document Session Reuse
 
-- [ ] Keep opened documents synchronized after a tab switch
-- [ ] Send incremental document changes instead of full text
-- [ ] Retain diagnostics and proof state per document across switches
-- [ ] Bound the number of concurrently open documents per workspace
+- [x] Keep opened documents synchronized after a tab switch
+- [x] Send incremental document changes instead of full text
+- [x] Retain diagnostics and proof state per document across switches
+- [x] Bound the number of concurrently open documents per workspace
 
 ## Milestone 14: Distribution Trust And Appearance
 
-- [ ] Notarize macOS builds and sign Windows installers
-- [ ] Remove unknown-publisher warnings from the install instructions
-- [ ] Add a dark theme for the editor and application shell
-- [ ] Follow the operating-system appearance preference by default
+- [x] Publish checksummed community builds without requiring platform signing credentials
+- [x] State clearly that macOS and Windows builds are unsigned
+- [x] Add a dark theme for the editor and application shell
+- [x] Follow the operating-system appearance preference by default

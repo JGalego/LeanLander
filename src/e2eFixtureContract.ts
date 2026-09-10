@@ -3,12 +3,19 @@ export interface E2eWorkspaceFile {
   name: string
   path: string
   content: string
+  loaded?: boolean
+  readOnly?: boolean
 }
 
 export interface E2eProofState {
-  declaration: string
-  goalCount: number
-  hypotheses: Array<{ name: string; type: string }>
+  goals?: Array<{
+    declaration: string
+    hypotheses: Array<{ name: string; type: string }>
+    target: string
+  }>
+  declaration?: string
+  goalCount?: number
+  hypotheses?: Array<{ name: string; type: string }>
   target?: string
 }
 
@@ -34,7 +41,9 @@ export interface E2eFixture {
       warnings: string[]
     }
     files: E2eWorkspaceFile[]
+    tree?: Array<unknown>
   }
+  dependencyFiles?: Record<string, E2eWorkspaceFile>
   recentProjects?: Array<{ name: string; path: string; openedAt: number }>
   toolchainStatus?: {
     state: 'checking' | 'ready' | 'missing-elan' | 'missing-toolchain' | 'unavailable' | 'error'

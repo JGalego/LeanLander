@@ -1,7 +1,9 @@
-import { ChevronDown, Circle, Download, FileCode2, Folder, History, X } from 'lucide-react'
+import { useEffect, useRef, useState } from 'react'
+import { ChevronDown, ChevronRight, Circle, Download, FileCode2, Folder, History, Search, X } from 'lucide-react'
 import type { WorkspaceFile } from '../model/workspace'
 import type { ServerStatus } from '../services/languageClient'
 import type { RecentProject } from '../services/projectClient'
+import type { ProjectSearchResult } from '../services/projectClient'
 import type { InstallProgress, ToolchainStatus } from '../services/toolchainClient'
 
 interface ProjectSidebarProps {
@@ -18,6 +20,9 @@ interface ProjectSidebarProps {
   serverStatus: ServerStatus
   toolchainStatus: ToolchainStatus
   onSelectFile: (fileId: string) => void
+  onSearch?: (query: string) => void
+  onSelectSearchResult?: (result: ProjectSearchResult) => void
+  searchResults?: ProjectSearchResult[]
 }
 
 export function ProjectSidebar({
@@ -34,9 +39,22 @@ export function ProjectSidebar({
   serverStatus,
   toolchainStatus,
   onSelectFile,
+  onSearch,
+  onSelectSearchResult,
+  searchResults = [],
 }: ProjectSidebarProps) {
-  const rootFiles = files.filter((file) => !file.path.includes('/'))
-  const sourceFiles = files.filter((file) => file.path.includes('/'))
+  const [filter, setFilter] = useState('')
+  const [collapsedPaths, setCollapsedPaths] = useState<Set<string>>(() => new Set())
+  const filterRef = useRef<HTMLInputElement>(null)
+  const visibleFiles = files.filter((file) => file.path.toLowerCase().includes(filter.toLowerCase()))
+  useEffect(() => {
+    const focusFilter = () => {
+      filterRef.current?.focus()
+      filterRef.current?.select()
+    }
+    window.addEventListener('leanlander:focus-file-filter', focusFilter)
+    return () => window.removeEventListener('leanlander:focus-file-filter', focusFilter)
+  }, [])
   const repair = toolchainStatus.repairs[0]
   const toolchainLabel = (() => {
     if (installProgress?.running) {
@@ -71,20 +89,57 @@ export function ProjectSidebar({
         ? ' status-dot--amber'
         : ''
 
-  function renderFile(file: WorkspaceFile, nested = false) {
+  function renderFile(file: WorkspaceFile) {
+    const depth = file.path.split('/').length - 1
     return (
       <button
         aria-current={activeFileId === file.id ? 'page' : undefined}
-        className={`file-row${nested ? ' file-row--nested' : ''}`}
+        className="file-row"
         key={file.id}
         onClick={() => onSelectFile(file.id)}
         title={file.path}
         type="button"
+        style={{ paddingLeft: 34 + depth * 14 }}
       >
         <FileCode2 aria-hidden="true" size={15} strokeWidth={1.8} />
         <span>{file.name}</span>
       </button>
     )
+  }
+
+  const treeRows: React.ReactNode[] = []
+  const renderedDirectories = new Set<string>()
+  for (const file of visibleFiles) {
+    const parts = file.path.split('/')
+    let parentCollapsed = false
+    for (let index = 0; index < parts.length - 1; index += 1) {
+      const directoryPath = parts.slice(0, index + 1).join('/')
+      if (!renderedDirectories.has(directoryPath)) {
+        renderedDirectories.add(directoryPath)
+        const collapsed = collapsedPaths.has(directoryPath) && !filter
+        treeRows.push(
+          <button
+            aria-expanded={!collapsed}
+            className="folder-row folder-row--button"
+            key={directoryPath}
+            onClick={() => setCollapsedPaths((current) => {
+              const next = new Set(current)
+              if (next.has(directoryPath)) next.delete(directoryPath)
+              else next.add(directoryPath)
+              return next
+            })}
+            style={{ paddingLeft: 22 + index * 14 }}
+            type="button"
+          >
+            {collapsed ? <ChevronRight aria-hidden="true" size={14} /> : <ChevronDown aria-hidden="true" size={14} />}
+            <Folder aria-hidden="true" size={15} strokeWidth={1.8} />
+            <span>{parts[index]}</span>
+          </button>,
+        )
+      }
+      parentCollapsed ||= collapsedPaths.has(directoryPath) && !filter
+    }
+    if (!parentCollapsed) treeRows.push(renderFile(file))
   }
 
   return (
@@ -100,18 +155,39 @@ export function ProjectSidebar({
         <strong>{projectName}</strong>
       </div>
 
+      <label className="file-filter">
+        <Search aria-hidden="true" size={13} />
+        <input
+          aria-label="Filter project files"
+          onChange={(event) => {
+            setFilter(event.target.value)
+            onSearch?.(event.target.value)
+          }}
+          placeholder="Filter files"
+          type="search"
+          value={filter}
+          ref={filterRef}
+        />
+      </label>
+
+      {filter && searchResults.length > 0 && (
+        <div aria-label="Project search results" className="search-results">
+          {searchResults.map((result) => (
+            <button
+              className="search-result"
+              key={`${result.path}:${result.line}`}
+              onClick={() => onSelectSearchResult?.(result)}
+              type="button"
+            >
+              <strong>{result.path}:{result.line}</strong>
+              <span>{result.preview}</span>
+            </button>
+          ))}
+        </div>
+      )}
+
       <nav aria-label={`${projectName} files`} className="file-tree">
-        {rootFiles.map((file) => renderFile(file))}
-        {sourceFiles.length > 0 && (
-          <div className="source-folder">
-            <div className="folder-row">
-              <ChevronDown aria-hidden="true" size={14} />
-              <Folder aria-hidden="true" size={15} strokeWidth={1.8} />
-              <span>Sources</span>
-            </div>
-            {sourceFiles.map((file) => renderFile(file, true))}
-          </div>
-        )}
+        {treeRows}
       </nav>
 
       {recentProjects.length > 0 && (

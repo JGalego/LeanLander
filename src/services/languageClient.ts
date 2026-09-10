@@ -1,4 +1,5 @@
 import { invoke, isTauri } from '@tauri-apps/api/core'
+import { listen, type UnlistenFn } from '@tauri-apps/api/event'
 import type { ProofState } from '../model/workspace'
 
 export type ServerState = 'offline' | 'starting' | 'ready' | 'error' | 'unavailable'
@@ -27,12 +28,32 @@ export interface LspRange {
   end: LspPosition
 }
 
+export interface DocumentChange {
+  range: LspRange
+  text: string
+}
+
 export interface LspDiagnostic {
   range: LspRange
   severity?: number
   code?: string | number
   source?: string
   message: string
+}
+
+export interface DiagnosticEvent {
+  uri: string
+  diagnostics: LspDiagnostic[]
+}
+
+export interface FileProgressEvent {
+  textDocument?: { uri?: string }
+  processing?: unknown[]
+}
+
+export interface LeanMessage {
+  message: string
+  severity: number
 }
 
 export interface LspLocation {
@@ -90,6 +111,7 @@ export interface LanguageClient {
     relativePath: string,
     content: string,
     version: number,
+    changes?: DocumentChange[],
   ): Promise<number>
   closeDocument(projectPath: string, relativePath: string): Promise<void>
   diagnostics(projectPath: string, relativePath: string): Promise<LspDiagnostic[]>
@@ -104,6 +126,9 @@ export interface LanguageClient {
     relativePath: string,
     position: LspPosition,
   ): Promise<ProofState>
+  onDiagnostics?(handler: (event: DiagnosticEvent) => void): Promise<UnlistenFn>
+  onFileProgress?(handler: (event: FileProgressEvent) => void): Promise<UnlistenFn>
+  onMessage?(handler: (event: LeanMessage) => void): Promise<UnlistenFn>
 }
 
 export const offlineServerStatus: ServerStatus = {
@@ -145,13 +170,14 @@ export const languageClient: LanguageClient = {
       : Promise.resolve()
   },
 
-  syncDocument(projectPath, relativePath, content, version) {
+  syncDocument(projectPath, relativePath, content, version, changes) {
     return isTauri()
       ? invoke<number>('sync_lean_document', {
           projectPath,
           relativePath,
           content,
           version,
+          changes,
         })
       : Promise.resolve(version)
   },
@@ -194,5 +220,23 @@ export const languageClient: LanguageClient = {
           character: position.character,
         })
       : Promise.resolve(noProofState)
+  },
+
+  onDiagnostics(handler) {
+    return isTauri()
+      ? listen<DiagnosticEvent>('lean-diagnostics', ({ payload }) => handler(payload))
+      : Promise.resolve(() => undefined)
+  },
+
+  onFileProgress(handler) {
+    return isTauri()
+      ? listen<FileProgressEvent>('lean-file-progress', ({ payload }) => handler(payload))
+      : Promise.resolve(() => undefined)
+  },
+
+  onMessage(handler) {
+    return isTauri()
+      ? listen<LeanMessage>('lean-message', ({ payload }) => handler(payload))
+      : Promise.resolve(() => undefined)
   },
 }
