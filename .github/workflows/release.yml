@@ -186,7 +186,7 @@ jobs:
           releaseBody: |
             Download the installer for your platform below.
 
-            Verify downloads against SHA256SUMS.txt. Builds use platform signing and notarization when the repository signing secrets are configured; unsigned preview builds may display an unknown-publisher warning.
+            Verify downloads against SHA256SUMS.txt. Builds use platform signing and notarization when the repository signing secrets are configured; unsigned builds may display an unknown-publisher warning.
           releaseDraft: true
           releaseName: LeanLander ${{ github.ref_name }}
           retryAttempts: 2
