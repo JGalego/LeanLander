@@ -1,32 +1,65 @@
-import { ChevronDown, Circle, FileCode2, Folder, History } from 'lucide-react'
+import { ChevronDown, Circle, Download, FileCode2, Folder, History, X } from 'lucide-react'
 import type { WorkspaceFile } from '../model/workspace'
 import type { RecentProject } from '../services/projectClient'
+import type { InstallProgress, ToolchainStatus } from '../services/toolchainClient'
 
 interface ProjectSidebarProps {
   activeFileId: string
   files: WorkspaceFile[]
+  installProgress: InstallProgress | null
   isSample: boolean
+  onCancelToolchainInstall: () => void
+  onInstallToolchain: () => void
   onOpenRecent: (path: string) => void
   projectName: string
   projectPath: string
   recentProjects: RecentProject[]
-  toolchain?: string | null
+  toolchainStatus: ToolchainStatus
   onSelectFile: (fileId: string) => void
 }
 
 export function ProjectSidebar({
   activeFileId,
   files,
+  installProgress,
   isSample,
+  onCancelToolchainInstall,
+  onInstallToolchain,
   onOpenRecent,
   projectName,
   projectPath,
   recentProjects,
-  toolchain,
+  toolchainStatus,
   onSelectFile,
 }: ProjectSidebarProps) {
   const rootFiles = files.filter((file) => !file.path.includes('/'))
   const sourceFiles = files.filter((file) => file.path.includes('/'))
+  const repair = toolchainStatus.repairs[0]
+  const toolchainLabel = (() => {
+    if (installProgress?.running) {
+      return installProgress.message
+    }
+
+    switch (toolchainStatus.state) {
+      case 'checking':
+        return 'Checking toolchains'
+      case 'ready':
+        return toolchainStatus.requiredToolchain ?? toolchainStatus.activeToolchain ?? 'Elan ready'
+      case 'missing-elan':
+        return 'Elan not found'
+      case 'missing-toolchain':
+        return `${toolchainStatus.requiredToolchain ?? 'Project toolchain'} missing`
+      case 'unavailable':
+        return 'Native tools unavailable'
+      default:
+        return 'Toolchain check failed'
+    }
+  })()
+  const toolchainTone = toolchainStatus.state === 'ready'
+    ? ' status-dot--ready'
+    : toolchainStatus.state === 'missing-elan' || toolchainStatus.state === 'error'
+      ? ' status-dot--error'
+      : ' status-dot--amber'
 
   function renderFile(file: WorkspaceFile, nested = false) {
     return (
@@ -95,12 +128,36 @@ export function ProjectSidebar({
         <div className="environment-row">
           <Circle
             aria-hidden="true"
-            className={`status-dot${toolchain ? ' status-dot--ready' : ' status-dot--amber'}`}
+            className={`status-dot${toolchainTone}`}
             size={8}
             fill="currentColor"
           />
-          <span>{toolchain ?? (isSample ? 'Toolchain not checked' : 'Toolchain file missing')}</span>
+          <span title={toolchainLabel}>{toolchainLabel}</span>
+          {installProgress?.running ? (
+            <button
+              aria-label="Cancel toolchain installation"
+              className="environment-action"
+              onClick={onCancelToolchainInstall}
+              title="Cancel toolchain installation"
+              type="button"
+            >
+              <X aria-hidden="true" size={13} />
+            </button>
+          ) : repair?.canRun ? (
+            <button
+              aria-label={repair.label}
+              className="environment-action"
+              onClick={onInstallToolchain}
+              title={repair.description}
+              type="button"
+            >
+              <Download aria-hidden="true" size={13} />
+            </button>
+          ) : null}
         </div>
+        {repair && !repair.canRun && (
+          <div className="environment-detail">{repair.description}</div>
+        )}
         <div className="environment-row">
           <Circle aria-hidden="true" className="status-dot" size={8} fill="currentColor" />
           <span>Lean server offline</span>

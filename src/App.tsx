@@ -25,6 +25,12 @@ import {
   projectGateway,
   type ProjectGateway,
 } from './services/projectGateway'
+import {
+  checkingToolchainStatus,
+  toolchainClient,
+  type InstallProgress,
+  type ToolchainClient,
+} from './services/toolchainClient'
 import leanlanderMark from './assets/leanlander-mark.svg'
 import './App.css'
 
@@ -37,9 +43,14 @@ const LeanEditor = lazy(() =>
 interface AppProps {
   client?: ProjectClient
   gateway?: ProjectGateway
+  toolchains?: ToolchainClient
 }
 
-function App({ client = projectClient, gateway = projectGateway }: AppProps) {
+function App({
+  client = projectClient,
+  gateway = projectGateway,
+  toolchains = toolchainClient,
+}: AppProps) {
   const [project, setProject] = useState(sampleWorkspace)
   const [files, setFiles] = useState(() => sampleWorkspace.files)
   const [projectMetadata, setProjectMetadata] = useState<ProjectMetadata | null>(null)
@@ -52,6 +63,8 @@ function App({ client = projectClient, gateway = projectGateway }: AppProps) {
   const [isSaving, setIsSaving] = useState(false)
   const [isSample, setIsSample] = useState(true)
   const [statusMessage, setStatusMessage] = useState('Ready')
+  const [toolchainStatus, setToolchainStatus] = useState(checkingToolchainStatus)
+  const [installProgress, setInstallProgress] = useState<InstallProgress | null>(null)
 
   const activeFile = files.find((file) => file.id === activeFileId) ?? files[0] ?? null
   const openFiles = openFileIds
@@ -64,6 +77,31 @@ function App({ client = projectClient, gateway = projectGateway }: AppProps) {
       .then(setRecentProjects)
       .catch(() => undefined)
   }, [client])
+
+  useEffect(() => {
+    let isCurrent = true
+    const requiredToolchain = projectMetadata?.leanToolchain ?? null
+
+    void toolchains.status(requiredToolchain)
+      .then((result) => {
+        if (isCurrent) {
+          setToolchainStatus(result)
+        }
+      })
+      .catch(() => {
+        if (isCurrent) {
+          setToolchainStatus({
+            ...checkingToolchainStatus,
+            state: 'error',
+            requiredToolchain,
+          })
+        }
+      })
+
+    return () => {
+      isCurrent = false
+    }
+  }, [projectMetadata?.leanToolchain, toolchains])
 
   function selectFile(fileId: string) {
     setOpenFileIds((current) =>
@@ -106,6 +144,10 @@ function App({ client = projectClient, gateway = projectGateway }: AppProps) {
       setDirtyFileIds([])
       setCursor({ lineNumber: 1, column: 1 })
       setIsSample(false)
+      setToolchainStatus({
+        ...checkingToolchainStatus,
+        requiredToolchain: discovered.metadata.leanToolchain,
+      })
       setStatusMessage(
         discovered.metadata.warnings.length > 0
           ? `Opened ${discovered.metadata.name} with ${discovered.metadata.warnings.length} warning${discovered.metadata.warnings.length === 1 ? '' : 's'}`
@@ -172,6 +214,46 @@ function App({ client = projectClient, gateway = projectGateway }: AppProps) {
     }
   }
 
+  async function installRequiredToolchain() {
+    const requiredToolchain = toolchainStatus.requiredToolchain
+    if (!requiredToolchain) {
+      return
+    }
+
+    setStatusMessage(`Installing ${requiredToolchain}…`)
+
+    try {
+      await toolchains.install(requiredToolchain)
+
+      while (true) {
+        const progress = await toolchains.progress()
+        setInstallProgress(progress)
+        setStatusMessage(progress.message)
+
+        if (!progress.running) {
+          break
+        }
+
+        await new Promise((resolve) => setTimeout(resolve, 400))
+      }
+
+      setToolchainStatus(await toolchains.status(requiredToolchain))
+    } catch (error) {
+      setStatusMessage(errorSummary(error))
+    }
+  }
+
+  async function cancelToolchainInstall() {
+    try {
+      await toolchains.cancel()
+      const progress = await toolchains.progress()
+      setInstallProgress(progress)
+      setStatusMessage(progress.message)
+    } catch (error) {
+      setStatusMessage(errorSummary(error))
+    }
+  }
+
   return (
     <div className="app-shell">
       <header className="topbar">
@@ -225,13 +307,16 @@ function App({ client = projectClient, gateway = projectGateway }: AppProps) {
         <ProjectSidebar
           activeFileId={activeFileId}
           files={files}
+          installProgress={installProgress}
           isSample={isSample}
+          onCancelToolchainInstall={cancelToolchainInstall}
+          onInstallToolchain={installRequiredToolchain}
           onOpenRecent={openRecentProject}
           onSelectFile={selectFile}
           projectName={project.name}
           projectPath={project.path}
           recentProjects={recentProjects}
-          toolchain={projectMetadata?.leanToolchain}
+          toolchainStatus={toolchainStatus}
         />
 
         <section aria-label="Lean editor" className="editor-pane">

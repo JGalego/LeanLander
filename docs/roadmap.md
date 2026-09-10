@@ -23,10 +23,10 @@
 
 ## Milestone 3: Elan
 
-- [ ] Detect Elan without assuming `PATH`
-- [ ] Parse installed and active toolchains
-- [ ] Install a project-required toolchain with progress and cancellation
-- [ ] Present safe repair actions for missing components
+- [x] Detect Elan without assuming `PATH`
+- [x] Parse installed and active toolchains
+- [x] Install a project-required toolchain with progress and cancellation
+- [x] Present safe repair actions for missing components
 
 ## Milestone 4: Lean Language Server
 

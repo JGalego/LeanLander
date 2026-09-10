@@ -35,7 +35,9 @@ Project discovery will inspect a selected directory for `lean-toolchain`, `lakef
 
 ### Toolchain service
 
-The toolchain service will discover Elan through platform-aware locations, parse `lean-toolchain`, list installed toolchains, and invoke Elan with explicit arguments. Installation and removal will require a user action and report progress as structured events.
+The toolchain service discovers Elan through `ELAN_HOME`, platform-aware default locations, and finally `PATH`. It parses installed and active toolchains independently because an active default may not be installed yet. Project-required installations require an explicit user action, invoke Elan with a validated argument array, expose structured progress, and retain a managed child-process handle for cancellation.
+
+When Elan is absent, LeanLander presents manual installation guidance rather than downloading and executing a script. Browser previews report native tools as unavailable instead of implying that a background check is pending.
 
 ### Lake and build service
 

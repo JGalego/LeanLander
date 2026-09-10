@@ -4,6 +4,7 @@ import { describe, expect, it, vi } from 'vitest'
 import type { WorkspaceFile } from './model/workspace'
 import type { ProjectClient } from './services/projectClient'
 import type { ProjectGateway } from './services/projectGateway'
+import type { ToolchainClient } from './services/toolchainClient'
 import App from './App'
 
 vi.mock('./components/LeanEditor', () => ({
@@ -67,5 +68,40 @@ describe('App', () => {
 
     expect(screen.getByText('ih')).toBeInTheDocument()
     expect(screen.getByText('⊢ Nat.succ n + 0 = Nat.succ n')).toBeInTheDocument()
+  })
+
+  it('installs a missing project toolchain through the repair action', async () => {
+    const user = userEvent.setup()
+    const toolchains: ToolchainClient = {
+      status: vi.fn().mockResolvedValue({
+        state: 'missing-toolchain',
+        elanPath: '/home/ada/.elan/bin/elan',
+        elanVersion: '4.2.0',
+        requiredToolchain: 'leanprover/lean4:v4.19.0',
+        activeToolchain: 'leanprover/lean4:v4.18.0',
+        installedToolchains: [],
+        repairs: [{
+          id: 'install-toolchain',
+          label: 'Install toolchain',
+          description: 'Install the project toolchain.',
+          command: ['elan', 'toolchain', 'install', 'leanprover/lean4:v4.19.0'],
+          canRun: true,
+        }],
+      }),
+      install: vi.fn().mockResolvedValue(undefined),
+      progress: vi.fn().mockResolvedValue({
+        stage: 'complete',
+        message: 'Installed leanprover/lean4:v4.19.0.',
+        running: false,
+        succeeded: true,
+      }),
+      cancel: vi.fn(),
+    }
+
+    render(<App toolchains={toolchains} />)
+    await user.click(await screen.findByRole('button', { name: 'Install toolchain' }))
+
+    expect(toolchains.install).toHaveBeenCalledWith('leanprover/lean4:v4.19.0')
+    expect(await screen.findByText('Installed leanprover/lean4:v4.19.0.')).toBeInTheDocument()
   })
 })

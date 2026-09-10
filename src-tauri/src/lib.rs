@@ -3,6 +3,7 @@ pub mod services;
 #[cfg(feature = "desktop")]
 use services::{
     project::{self, DiscoveredProject, ProjectFile, RecentProject},
+    toolchain::{self, InstallProgress, ToolchainManager, ToolchainStatus},
     ServiceError,
 };
 #[cfg(feature = "desktop")]
@@ -74,15 +75,51 @@ fn recent_projects(app: tauri::AppHandle) -> Result<Vec<RecentProject>, ServiceE
 }
 
 #[cfg(feature = "desktop")]
+#[tauri::command]
+fn toolchain_status(required_toolchain: Option<String>) -> Result<ToolchainStatus, ServiceError> {
+    toolchain::inspect(required_toolchain.as_deref())
+}
+
+#[cfg(feature = "desktop")]
+#[tauri::command]
+fn install_toolchain(
+    manager: tauri::State<'_, ToolchainManager>,
+    toolchain: String,
+) -> Result<(), ServiceError> {
+    manager.start_install(&toolchain)
+}
+
+#[cfg(feature = "desktop")]
+#[tauri::command]
+fn toolchain_install_progress(
+    manager: tauri::State<'_, ToolchainManager>,
+) -> Result<InstallProgress, ServiceError> {
+    manager.progress()
+}
+
+#[cfg(feature = "desktop")]
+#[tauri::command]
+fn cancel_toolchain_install(
+    manager: tauri::State<'_, ToolchainManager>,
+) -> Result<(), ServiceError> {
+    manager.cancel()
+}
+
+#[cfg(feature = "desktop")]
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        .manage(ToolchainManager::default())
         .plugin(tauri_plugin_dialog::init())
         .invoke_handler(tauri::generate_handler![
             discover_project,
             load_project_file,
             save_project_file,
-            recent_projects
+            recent_projects,
+            toolchain_status,
+            install_toolchain,
+            toolchain_install_progress,
+            cancel_toolchain_install
         ])
         .setup(|app| {
             if cfg!(debug_assertions) {

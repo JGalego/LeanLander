@@ -257,6 +257,39 @@
   font-size: 11px;
 }
 
+.environment-row > span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.environment-action {
+  display: grid;
+  width: 23px;
+  height: 23px;
+  margin-left: auto;
+  padding: 0;
+  flex: 0 0 auto;
+  place-items: center;
+  color: var(--accent-ink);
+  background: transparent;
+  border: 0;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.environment-action:hover {
+  background: var(--accent-soft);
+}
+
+.environment-detail {
+  padding: 2px 13px 7px 29px;
+  color: var(--faint);
+  font-size: 10px;
+  line-height: 1.4;
+}
+
 .status-dot {
   flex: 0 0 auto;
   color: #9ba39e;
@@ -268,6 +301,10 @@
 
 .status-dot--ready {
   color: #77c3a5;
+}
+
+.status-dot--error {
+  color: #b84d45;
 }
 
 .editor-pane {
