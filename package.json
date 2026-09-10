@@ -8,8 +8,12 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "dev:e2e": "vite --mode e2e --port 1422",
     "build": "tsc -b && vite build",
+    "e2e": "playwright test",
+    "e2e:install": "playwright install chromium",
     "lint": "oxlint",
+    "profile": "playwright test e2e/performance.spec.ts --workers=1",
     "preview": "vite preview",
     "tauri": "tauri",
     "test": "vitest run",
@@ -29,6 +33,8 @@
     "react-dom": "^19.2.8"
   },
   "devDependencies": {
+    "@axe-core/playwright": "^4.13.0",
+    "@playwright/test": "^1.63.0",
     "@tauri-apps/cli": "^2.11.4",
     "@testing-library/jest-dom": "^7.0.1",
     "@testing-library/react": "^16.3.3",

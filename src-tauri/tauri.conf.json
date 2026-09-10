@@ -29,6 +29,14 @@
   "bundle": {
     "active": true,
     "targets": "all",
+    "publisher": "João Galego",
+    "homepage": "https://github.com/JGalego/LeanLander",
+    "copyright": "Copyright (c) 2026 João Galego",
+    "license": "MIT",
+    "licenseFile": "../LICENSE",
+    "category": "DeveloperTool",
+    "shortDescription": "A focused desktop IDE for Lean 4",
+    "longDescription": "LeanLander is a focused, cross-platform desktop IDE for exploring Lean 4 projects, editing proofs, managing toolchains, and diagnosing project environments.",
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",
@@ -36,6 +44,22 @@
       "icons/icon.icns",
       "icons/icon.ico"
     ],
+    "windows": {
+      "allowDowngrades": false,
+      "nsis": {
+        "installerIcon": "icons/icon.ico",
+        "languages": ["English"]
+      },
+      "wix": {
+        "upgradeCode": "681cae45-ebd9-53c2-96d5-feacc67aef25",
+        "language": "en-US"
+      }
+    },
+    "macOS": {
+      "bundleName": "LeanLander",
+      "hardenedRuntime": true,
+      "minimumSystemVersion": "10.13"
+    },
     "android": {
       "debugApplicationIdSuffix": ".debug"
     }

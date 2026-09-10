@@ -83,3 +83,7 @@ The project toolchain file selects Lean. Server capabilities are captured from t
 ## Testing Layers
 
 Frontend unit tests cover service boundaries, workspace transitions, editor adapters, dialog keyboard behavior, Doctor repairs and lazy details, error/loading states, and proof rendering. Rust unit tests cover project detection, executable discovery, diagnostic classification, bounded logs, command construction, process state transitions, JSON-RPC framing, and proof response parsing. Opt-in native integration tests use temporary projects and installed toolchains so the default suite remains fast and offline.
+
+Playwright installs Tauri's official IPC mocks before React starts, while Node fixtures create isolated temporary Lean projects on disk and expose only a serializable command contract to the browser. The acceptance layer opens and explores a project, switches sources, renders a proof state, builds, exercises Doctor details by keyboard, and scans the rendered workspace with axe at WCAG A and AA. A Chromium profile uses the same harness to measure React and Monaco readiness plus garbage-collected heap growth for a generated large Lean source.
+
+CI runs the browser acceptance layer independently of native builds. The mocks validate the frontend-to-command contract deterministically; opt-in live Rust tests remain responsible for actual Elan, Lake, and Lean processes.

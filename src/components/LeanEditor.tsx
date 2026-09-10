@@ -9,6 +9,7 @@ import {
   type LeanLanguageContext,
 } from '../editor/leanLsp'
 import type { WorkspaceFile } from '../model/workspace'
+import { markOnce, performanceMarks } from '../performance'
 import type { LspDiagnostic } from '../services/languageClient'
 
 const workerScope = self as typeof self & {
@@ -56,6 +57,7 @@ export function LeanEditor({
   }
 
   const handleMount: OnMount = (editor, monacoInstance) => {
+    markOnce(performanceMarks.editorReady)
     editorRef.current = editor
     monacoRef.current = monacoInstance
     const providers = registerLeanLanguageProviders(

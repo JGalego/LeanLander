@@ -53,6 +53,7 @@ import {
   type ProjectMetadata,
   type RecentProject,
 } from './services/projectClient'
+import { markOnce, performanceMarks } from './performance'
 import {
   projectGateway,
   type ProjectGateway,
@@ -121,6 +122,10 @@ function App({
   const documentVersions = useRef(new Map<string, number>())
   const serverLeases = useRef(new Map<string, number>())
   const projectLoadGeneration = useRef(0)
+
+  useEffect(() => {
+    markOnce(performanceMarks.appReady)
+  }, [])
 
   const activeFile = files.find((file) => file.id === activeFileId) ?? files[0] ?? null
   const activeFilePath = activeFile?.path ?? null

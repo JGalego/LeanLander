@@ -39,10 +39,22 @@ jobs:
       - name: Check frontend
         run: npm run check
 
+      - name: Test native services
+        run: cargo test --manifest-path src-tauri/Cargo.toml --no-default-features --lib --locked
+
+      - name: Install Chromium
+        run: npx playwright install --with-deps chromium
+
+      - name: Exercise browser workflows
+        run: npm run e2e
+
   build-release:
     name: Release ${{ matrix.name }}
     needs: verify
     runs-on: ${{ matrix.platform }}
+    env:
+      WINDOWS_SIGNING_ARGS: ''
+      WINDOWS_SIGNING_CONFIGURED: ${{ secrets['WINDOWS_CERTIFICATE'] != '' && secrets['WINDOWS_CERTIFICATE_PASSWORD'] != '' && secrets['WINDOWS_TIMESTAMP_URL'] != '' }}
     strategy:
       fail-fast: false
       matrix:
@@ -99,20 +111,64 @@ jobs:
       - name: Install frontend dependencies
         run: npm ci
 
+      - name: Import Windows signing certificate
+        if: runner.os == 'Windows' && env.WINDOWS_SIGNING_CONFIGURED == 'true'
+        shell: pwsh
+        env:
+          WINDOWS_CERTIFICATE: ${{ secrets['WINDOWS_CERTIFICATE'] }}
+          WINDOWS_CERTIFICATE_PASSWORD: ${{ secrets['WINDOWS_CERTIFICATE_PASSWORD'] }}
+          WINDOWS_TIMESTAMP_URL: ${{ secrets['WINDOWS_TIMESTAMP_URL'] }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $certificatePath = Join-Path $env:RUNNER_TEMP 'leanlander-signing.pfx'
+          $configPath = Join-Path $env:GITHUB_WORKSPACE 'src-tauri/tauri.windows-signing.json'
+          try {
+            [IO.File]::WriteAllBytes(
+              $certificatePath,
+              [Convert]::FromBase64String($env:WINDOWS_CERTIFICATE)
+            )
+            $password = ConvertTo-SecureString $env:WINDOWS_CERTIFICATE_PASSWORD -AsPlainText -Force
+            $certificate = Import-PfxCertificate `
+              -FilePath $certificatePath `
+              -CertStoreLocation Cert:\CurrentUser\My `
+              -Password $password
+            if ([string]::IsNullOrWhiteSpace($certificate.Thumbprint)) {
+              throw 'The imported Windows signing certificate has no thumbprint.'
+            }
+          } finally {
+            Remove-Item $certificatePath -Force -ErrorAction SilentlyContinue
+          }
+
+          @{
+            bundle = @{
+              windows = @{
+                certificateThumbprint = $certificate.Thumbprint
+                digestAlgorithm = 'sha256'
+                timestampUrl = $env:WINDOWS_TIMESTAMP_URL
+              }
+            }
+          } | ConvertTo-Json -Depth 4 | Set-Content $configPath
+          "WINDOWS_SIGNING_ARGS=--config $configPath" >> $env:GITHUB_ENV
+
       - name: Build and upload release bundles
         uses: tauri-apps/tauri-action@v1
         env:
-          APPLE_SIGNING_IDENTITY: ${{ startsWith(matrix.platform, 'macos-') && '-' || '' }}
+          APPLE_CERTIFICATE: ${{ secrets['APPLE_CERTIFICATE'] }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets['APPLE_CERTIFICATE_PASSWORD'] }}
+          APPLE_ID: ${{ secrets['APPLE_ID'] }}
+          APPLE_PASSWORD: ${{ secrets['APPLE_PASSWORD'] }}
+          APPLE_SIGNING_IDENTITY: ${{ startsWith(matrix.platform, 'macos-') && (secrets['APPLE_SIGNING_IDENTITY'] || '-') || '' }}
+          APPLE_TEAM_ID: ${{ secrets['APPLE_TEAM_ID'] }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          args: ${{ matrix.args }}
+          args: ${{ matrix.args }} ${{ env.WINDOWS_SIGNING_ARGS }}
           generateReleaseNotes: true
           prerelease: ${{ contains(github.ref_name, '-') }}
           releaseAssetNamePattern: LeanLander_[version]_[platform]_[arch][setup][ext]
           releaseBody: |
             Download the installer for your platform below.
 
-            These preview builds are not yet notarized on macOS or signed on Windows, so the operating system may display an unknown-publisher warning.
+            Verify downloads against SHA256SUMS.txt. Builds use platform signing and notarization when the repository signing secrets are configured; unsigned preview builds may display an unknown-publisher warning.
           releaseDraft: true
           releaseName: LeanLander ${{ github.ref_name }}
           retryAttempts: 2

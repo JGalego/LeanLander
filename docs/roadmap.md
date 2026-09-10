@@ -53,7 +53,7 @@
 
 - [x] Add Windows, macOS, and Linux CI builds
 - [x] Publish version-tagged GitHub releases with checksums
-- [ ] Add signed application icons and installer metadata
-- [ ] Exercise accessibility and keyboard workflows
-- [ ] Add end-to-end tests with temporary Lean projects
-- [ ] Profile startup and editor memory use
+- [x] Add signed application icons and installer metadata
+- [x] Exercise accessibility and keyboard workflows
+- [x] Add end-to-end tests with temporary Lean projects
+- [x] Profile startup and editor memory use

@@ -7,7 +7,7 @@
 <p align="center"><strong>There can be only one... Lean IDE.</strong></p>
 
 <p align="center">
-  <img alt="Status: Milestone 6" src="https://img.shields.io/badge/status-milestone%206-68717d">
+  <img alt="Status: Milestone 7" src="https://img.shields.io/badge/status-milestone%207-68717d">
   <img alt="Tauri 2" src="https://img.shields.io/badge/Tauri-2-24c8db?logo=tauri&logoColor=white">
   <img alt="React 19" src="https://img.shields.io/badge/React-19-087ea4?logo=react&logoColor=white">
   <a href="https://github.com/JGalego/LeanLander/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/JGalego/LeanLander/actions/workflows/ci.yml/badge.svg"></a>
@@ -16,7 +16,7 @@
 
 LeanLander is a focused, cross-platform desktop IDE for Lean 4. It aims to make opening a project and proving feel immediate, without asking users to become experts in Elan, Lake, or editor configuration first.
 
-The project is currently at **Milestone 6**: Lean Doctor reports Elan, toolchain, Lean, Lake, dependency, and server health, offers only explicit managed repairs, and keeps bounded process details hidden until requested. LeanLander can also create Lean or Mathlib Lake projects, optionally initialize Git, update dependencies, and run builds with progress, cancellation, and actionable failure messages. Real projects use one managed Lean server per workspace for document synchronization, diagnostics, language features, and cursor-position proof states. The bundled sample remains deterministic and works without native tools.
+The project has completed **Milestone 7**: LeanLander provides cross-platform installer builds, version-tagged releases with checksums, temporary-project browser workflows, WCAG A/AA automation, and reproducible startup and editor-memory profiling. Lean Doctor reports Elan, toolchain, Lean, Lake, dependency, and server health, offers only explicit managed repairs, and keeps bounded process details hidden until requested. LeanLander can also create Lean or Mathlib Lake projects, optionally initialize Git, update dependencies, and run builds with progress, cancellation, and actionable failure messages. Real projects use one managed Lean server per workspace for document synchronization, diagnostics, language features, and cursor-position proof states. The bundled sample remains deterministic and works without native tools.
 
 ## Getting Started
 
@@ -56,11 +56,13 @@ Build an installable desktop bundle with `npm run tauri build`.
 
 ```bash
 npm run check
+npm run e2e
+npm run profile
 cargo fmt --manifest-path src-tauri/Cargo.toml --check
 cargo check --manifest-path src-tauri/Cargo.toml
 ```
 
-`npm run check` runs Oxlint, Vitest, TypeScript, and the Vite production build. `cargo check` requires the platform dependencies listed above.
+`npm run check` runs Oxlint, Vitest, TypeScript, and the Vite production build. Install Chromium once with `npm run e2e:install`; `npm run e2e` exercises temporary-project, keyboard, accessibility, and performance workflows. `npm run profile` emits the focused Chromium profile described in [docs/releasing.md](docs/releasing.md). `cargo check` requires the platform dependencies listed above.
 
 ## Structure
 
@@ -76,7 +78,8 @@ src-tauri/
   src/              Native application entry points
 docs/
   architecture.md   System boundaries and integration strategy
+  releasing.md      Release signing and performance baseline
   roadmap.md        Milestone status and next work
 ```
 
-See [docs/architecture.md](docs/architecture.md) for design decisions and [docs/roadmap.md](docs/roadmap.md) for the implementation sequence.
+See [docs/architecture.md](docs/architecture.md) for design decisions, [docs/releasing.md](docs/releasing.md) for distribution details, and [docs/roadmap.md](docs/roadmap.md) for the implementation sequence.
