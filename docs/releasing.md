@@ -48,7 +48,7 @@ Release artifacts are checksummed but are not code-signed or notarized. The rele
 
 ## Newcomer Acceptance
 
-The v0.2.0 newcomer workflow completed in 6.332 seconds on September 10, 2026. It installed the fixture's missing project toolchain, created `ArithmeticProof`, entered `example : 2 + 2 = 4 := by decide`, observed no remaining goals, and saved the source. The run stayed below its 120-second budget; watch the [Playwright recording](assets/demos/newcomer-acceptance-v0.2.0.webm).
+The v0.2.0 newcomer workflow completed in 6.332 seconds on September 10, 2026. It installed the fixture's missing project toolchain, created `ArithmeticProof`, entered `example : 2 + 2 = 4 := by decide`, observed no remaining goals, and saved the source. The run stayed below its 120-second budget; watch the [Playwright recording](assets/demos/newcomer-acceptance-v0.2.0.gif).
 
 This deterministic browser acceptance uses mocked native boundaries and requires no Lean installation on the host. It verifies the complete UI workflow and its toolchain state transition, not Elan download speed on a physical clean machine.
 
