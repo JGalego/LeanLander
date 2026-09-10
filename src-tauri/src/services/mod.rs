@@ -1,4 +1,5 @@
 pub mod project;
+pub mod server;
 pub mod toolchain;
 
 use serde::Serialize;

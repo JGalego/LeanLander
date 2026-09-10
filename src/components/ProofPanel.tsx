@@ -3,11 +3,17 @@ import type { ProofState } from '../model/workspace'
 
 interface ProofPanelProps {
   column: number
+  diagnosticCount?: number
   lineNumber: number
   proofState: ProofState
 }
 
-export function ProofPanel({ column, lineNumber, proofState }: ProofPanelProps) {
+export function ProofPanel({
+  column,
+  diagnosticCount = 0,
+  lineNumber,
+  proofState,
+}: ProofPanelProps) {
   const hasGoal = proofState.goalCount > 0 && proofState.target
 
   return (
@@ -66,7 +72,11 @@ export function ProofPanel({ column, lineNumber, proofState }: ProofPanelProps) 
           <MessageSquareText aria-hidden="true" size={14} />
           <span>Messages</span>
         </div>
-        <span>No messages</span>
+        <span>
+          {diagnosticCount === 0
+            ? 'No messages'
+            : `${diagnosticCount} message${diagnosticCount === 1 ? '' : 's'}`}
+        </span>
       </footer>
 
       <div className="proof-position">

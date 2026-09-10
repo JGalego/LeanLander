@@ -19,19 +19,19 @@ No UI component should construct a shell command. Native operations accept struc
 
 ## Current Boundary
 
-Milestone 2 adds narrowly scoped Rust commands for project discovery, source loading and saving, and recent-project history. `ProjectGateway` still isolates the native folder dialog, while `ProjectClient` owns structured `invoke` calls. Browser mode keeps the deterministic sample workspace active.
+Narrowly scoped Rust commands own project discovery, source loading and saving, recent-project history, Elan operations, and Lean server communication. Frontend clients own structured `invoke` calls, while `ProjectGateway` isolates the native folder dialog. Browser mode keeps the deterministic sample workspace active without claiming native services are available.
 
 Project discovery performs one bounded scan, ignores generated and dependency directories, and never follows symlinks. Later reads and writes accept only existing relative `.lean` paths whose canonical targets remain inside the selected project. Recent paths are stored in Tauri's application data directory.
 
 The Tauri capability grants `dialog:allow-open` only. Filesystem access remains behind validated Rust commands; there is no shell plugin, broad filesystem scope, or process capability exposed to the webview. Monaco and both fonts are packaged locally, so the editor does not fetch runtime assets from a CDN.
 
-The proof panel still consumes fixture data selected by cursor line. This proves the editor-to-infoview interaction shape without pretending a Lean server is connected.
+For a real project, Monaco documents are synchronized with a managed Lean process using full-text, monotonically versioned LSP updates. Diagnostics become Monaco markers, and hover, completion, definition, references, and document symbols use Monaco providers backed by standard LSP requests. The proof panel uses Lean's infoview RPC at the current cursor position. Only the bundled sample uses fixture proof data.
 
-## Planned Native Services
+## Native Services
 
 ### Project service
 
-Project discovery will inspect a selected directory for `lean-toolchain`, `lakefile.toml`, `lakefile.lean`, and Lean sources. It will return structured facts and warnings before offering any modifying action. LeanLander will not introduce a proprietary project format.
+Project discovery inspects a selected directory for `lean-toolchain`, `lakefile.toml`, `lakefile.lean`, and Lean sources. It returns structured facts and warnings before offering any modifying action. LeanLander does not introduce a proprietary project format.
 
 ### Toolchain service
 
@@ -45,9 +45,9 @@ Lake remains the package and build authority. LeanLander will invoke known Lake 
 
 ### Lean server manager
 
-One long-lived server process will be owned per open workspace. The manager will launch the project-selected Lean server, speak JSON-RPC over stdio, route document lifecycle events, and stop the process when its workspace closes. Restarts will be bounded and observable rather than implemented as aggressive polling.
+One long-lived server process is owned per open workspace. The manager launches the project-selected Lean server through Elan, speaks framed JSON-RPC over stdio, routes document lifecycle events, answers server-to-client configuration requests, caches diagnostics by URI, and stops the process when its workspace closes.
 
-Diagnostics, hover, completion, definitions, references, and symbols will use standard LSP messages. Proof state will reuse Lean's existing infoview and RPC mechanisms. The upstream `@leanprover/infoview` loader is designed for LSP-capable hosts that can mirror notifications and relay requests; Milestone 4 will verify and isolate the compatibility layer rather than inventing a second proof protocol.
+Diagnostics, hover, completion, definitions, references, and symbols use standard LSP messages. Proof state connects to Lean's existing infoview session and calls `Lean.Widget.getInteractiveGoals`; a native compatibility adapter strips rich RPC tags into the stable UI model and falls back to `$/lean/plainGoal` when interactive RPC is unavailable.
 
 ## Process And Error Model
 
@@ -68,8 +68,8 @@ Secrets and unrelated environment values will not be logged. Cancellation will t
 
 ## Version Compatibility
 
-The project toolchain file selects Lean. Server startup and RPC compatibility will be represented as capabilities detected from the selected version, not assumptions embedded in React components. Version-specific adapters belong next to the Lean server manager and expose one stable application interface.
+The project toolchain file selects Lean. Server capabilities are captured from the initialize response rather than assumed in React components. A compatibility adapter next to the server manager owns proof RPC decoding and fallback behavior behind one stable application interface. The live integration test has been exercised against Lean 4.14 and 4.33.
 
 ## Testing Layers
 
-Frontend unit tests cover service boundaries, workspace transitions, error/loading states, and proof rendering. Rust unit tests will cover project detection, executable discovery, command construction, and output parsing as those services arrive. Integration tests will use temporary projects and opt-in downloaded toolchains so the default unit suite remains fast and offline.
+Frontend unit tests cover service boundaries, workspace transitions, editor adapters, error/loading states, and proof rendering. Rust unit tests cover project detection, executable discovery, command construction, JSON-RPC framing, and proof response parsing. An opt-in native integration test uses a temporary project and installed toolchain so the default suite remains fast and offline.

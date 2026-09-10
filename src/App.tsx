@@ -1,4 +1,4 @@
-import { lazy, startTransition, Suspense, useEffect, useState } from 'react'
+import { lazy, startTransition, Suspense, useEffect, useRef, useState } from 'react'
 import {
   Circle,
   FileCode2,
@@ -12,8 +12,16 @@ import { ProofPanel } from './components/ProofPanel'
 import {
   proofStateAt,
   sampleWorkspace,
+  type ProofState,
   type WorkspaceFile,
 } from './model/workspace'
+import {
+  languageClient,
+  offlineServerStatus,
+  type LanguageClient,
+  type LspDiagnostic,
+  type ServerStatus,
+} from './services/languageClient'
 import {
   errorSummary,
   projectClient,
@@ -43,12 +51,20 @@ const LeanEditor = lazy(() =>
 interface AppProps {
   client?: ProjectClient
   gateway?: ProjectGateway
+  language?: LanguageClient
   toolchains?: ToolchainClient
+}
+
+const noProofState: ProofState = {
+  declaration: 'No active declaration',
+  goalCount: 0,
+  hypotheses: [],
 }
 
 function App({
   client = projectClient,
   gateway = projectGateway,
+  language = languageClient,
   toolchains = toolchainClient,
 }: AppProps) {
   const [project, setProject] = useState(sampleWorkspace)
@@ -65,12 +81,21 @@ function App({
   const [statusMessage, setStatusMessage] = useState('Ready')
   const [toolchainStatus, setToolchainStatus] = useState(checkingToolchainStatus)
   const [installProgress, setInstallProgress] = useState<InstallProgress | null>(null)
+  const [serverStatus, setServerStatus] = useState<ServerStatus>(offlineServerStatus)
+  const [nativeProofState, setNativeProofState] = useState<ProofState>(noProofState)
+  const [diagnostics, setDiagnostics] = useState<LspDiagnostic[]>([])
+  const [syncedDocument, setSyncedDocument] = useState<string | null>(null)
+  const documentVersions = useRef(new Map<string, number>())
+  const serverLeases = useRef(new Map<string, number>())
 
   const activeFile = files.find((file) => file.id === activeFileId) ?? files[0] ?? null
+  const activeFilePath = activeFile?.path ?? null
   const openFiles = openFileIds
     .map((fileId) => files.find((file) => file.id === fileId))
     .filter((file): file is WorkspaceFile => Boolean(file))
-  const proofState = proofStateAt(activeFile?.id ?? '', cursor.lineNumber)
+  const proofState = isSample
+    ? proofStateAt(activeFile?.id ?? '', cursor.lineNumber)
+    : nativeProofState
 
   useEffect(() => {
     void client.recentProjects()
@@ -86,6 +111,15 @@ function App({
       .then((result) => {
         if (isCurrent) {
           setToolchainStatus(result)
+          if (result.state !== 'ready') {
+            setServerStatus({
+              ...offlineServerStatus,
+              state: result.state === 'unavailable' ? 'unavailable' : 'offline',
+              message: result.state === 'unavailable'
+                ? 'Native Lean server unavailable in browser preview'
+                : 'Lean server waiting for toolchain',
+            })
+          }
         }
       })
       .catch(() => {
@@ -103,12 +137,156 @@ function App({
     }
   }, [projectMetadata?.leanToolchain, toolchains])
 
+  useEffect(() => {
+    if (isSample || toolchainStatus.state !== 'ready') {
+      return
+    }
+
+    let isCurrent = true
+    const projectPath = project.path
+    const leases = serverLeases.current
+    const lease = (leases.get(projectPath) ?? 0) + 1
+    leases.set(projectPath, lease)
+    void language.start(projectPath, projectMetadata?.leanToolchain ?? null)
+      .then((status) => {
+        if (isCurrent) {
+          setServerStatus(status)
+        }
+      })
+      .catch((error) => {
+        if (isCurrent) {
+          setServerStatus({
+            ...offlineServerStatus,
+            state: 'error',
+            message: errorSummary(error),
+            toolchain: projectMetadata?.leanToolchain ?? null,
+          })
+        }
+      })
+
+    return () => {
+      isCurrent = false
+      queueMicrotask(() => {
+        if (leases.get(projectPath) === lease) {
+          leases.delete(projectPath)
+          void language.stop(projectPath)
+        }
+      })
+    }
+  }, [isSample, language, project.path, projectMetadata?.leanToolchain, toolchainStatus.state])
+
+  useEffect(() => {
+    if (isSample || serverStatus.state !== 'ready' || !activeFilePath) {
+      return
+    }
+
+    const projectPath = project.path
+    const relativePath = activeFilePath
+    return () => {
+      void language.closeDocument(projectPath, relativePath).catch(() => undefined)
+    }
+  }, [activeFilePath, isSample, language, project.path, serverStatus.state])
+
+  useEffect(() => {
+    if (isSample || serverStatus.state !== 'ready' || !activeFile) {
+      return
+    }
+
+    let isCurrent = true
+    const key = `${project.path}\0${activeFile.path}`
+    const timeout = window.setTimeout(() => {
+      const version = (documentVersions.current.get(key) ?? 0) + 1
+      void language.syncDocument(
+        project.path,
+        activeFile.path,
+        activeFile.content,
+        version,
+      ).then((acceptedVersion) => {
+        documentVersions.current.set(key, acceptedVersion)
+        if (isCurrent) {
+          setSyncedDocument(key)
+        }
+      }).catch((error) => {
+        if (isCurrent) {
+          setStatusMessage(errorSummary(error))
+        }
+      })
+    }, 120)
+
+    return () => {
+      isCurrent = false
+      window.clearTimeout(timeout)
+    }
+  }, [activeFile, isSample, language, project.path, serverStatus.state])
+
+  useEffect(() => {
+    if (isSample || serverStatus.state !== 'ready' || !activeFilePath) {
+      return
+    }
+    const key = `${project.path}\0${activeFilePath}`
+    if (syncedDocument !== key) {
+      return
+    }
+
+    let isCurrent = true
+    const refresh = () => {
+      void language.diagnostics(project.path, activeFilePath)
+        .then((items) => {
+          if (isCurrent) {
+            setDiagnostics(items)
+          }
+        })
+        .catch(() => undefined)
+    }
+    refresh()
+    const interval = window.setInterval(refresh, 600)
+
+    return () => {
+      isCurrent = false
+      window.clearInterval(interval)
+    }
+  }, [activeFilePath, isSample, language, project.path, serverStatus.state, syncedDocument])
+
+  useEffect(() => {
+    if (isSample || serverStatus.state !== 'ready' || !activeFilePath) {
+      return
+    }
+    const key = `${project.path}\0${activeFilePath}`
+    if (syncedDocument !== key) {
+      return
+    }
+
+    let isCurrent = true
+    const timeout = window.setTimeout(() => {
+      void language.proofState(project.path, activeFilePath, {
+        line: Math.max(0, cursor.lineNumber - 1),
+        character: Math.max(0, cursor.column - 1),
+      }).then((state) => {
+        if (isCurrent) {
+          setNativeProofState(state)
+        }
+      }).catch(() => {
+        if (isCurrent) {
+          setNativeProofState(noProofState)
+        }
+      })
+    }, 100)
+
+    return () => {
+      isCurrent = false
+      window.clearTimeout(timeout)
+    }
+  }, [activeFilePath, cursor, isSample, language, project.path, serverStatus.state, syncedDocument])
+
   function selectFile(fileId: string) {
     setOpenFileIds((current) =>
       current.includes(fileId) ? current : [...current, fileId],
     )
     setActiveFileId(fileId)
     setCursor({ lineNumber: 1, column: 1 })
+    setDiagnostics([])
+    setNativeProofState(noProofState)
+    setSyncedDocument(null)
   }
 
   function updateActiveFile(content: string) {
@@ -125,6 +303,7 @@ function App({
       current.includes(activeFileId) ? current : [...current, activeFileId],
     )
     setStatusMessage('Unsaved changes')
+    setSyncedDocument(null)
   }
 
   async function loadProject(path: string) {
@@ -144,6 +323,16 @@ function App({
       setDirtyFileIds([])
       setCursor({ lineNumber: 1, column: 1 })
       setIsSample(false)
+      documentVersions.current.clear()
+      setDiagnostics([])
+      setNativeProofState(noProofState)
+      setSyncedDocument(null)
+      setServerStatus({
+        ...offlineServerStatus,
+        state: 'starting',
+        message: 'Waiting to start Lean server',
+        toolchain: discovered.metadata.leanToolchain,
+      })
       setToolchainStatus({
         ...checkingToolchainStatus,
         requiredToolchain: discovered.metadata.leanToolchain,
@@ -316,6 +505,7 @@ function App({
           projectName={project.name}
           projectPath={project.path}
           recentProjects={recentProjects}
+          serverStatus={serverStatus}
           toolchainStatus={toolchainStatus}
         />
 
@@ -349,7 +539,17 @@ function App({
                 )}
               >
                 <LeanEditor
+                  diagnostics={diagnostics}
                   file={activeFile}
+                  languageContext={
+                    !isSample && serverStatus.state === 'ready'
+                      ? {
+                          client: language,
+                          projectPath: project.path,
+                          relativePath: activeFile.path,
+                        }
+                      : null
+                  }
                   onChange={updateActiveFile}
                   onCursorChange={(lineNumber, column) => setCursor({ lineNumber, column })}
                 />
@@ -365,6 +565,7 @@ function App({
 
         <ProofPanel
           column={cursor.column}
+          diagnosticCount={diagnostics.length}
           lineNumber={cursor.lineNumber}
           proofState={proofState}
         />

@@ -30,11 +30,11 @@
 
 ## Milestone 4: Lean Language Server
 
-- [ ] Manage one Lean server process per workspace
-- [ ] Connect Monaco documents to LSP lifecycle events
-- [ ] Implement diagnostics, hover, completion, definitions, references, and symbols
-- [ ] Integrate Lean infoview RPC for real cursor-position proof states
-- [ ] Isolate differences between Lean versions behind a compatibility adapter
+- [x] Manage one Lean server process per workspace
+- [x] Connect Monaco documents to LSP lifecycle events
+- [x] Implement diagnostics, hover, completion, definitions, references, and symbols
+- [x] Integrate Lean infoview RPC for real cursor-position proof states
+- [x] Isolate differences between Lean versions behind a compatibility adapter
 
 ## Milestone 5: Lake And Project Creation
 

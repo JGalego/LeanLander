@@ -1,8 +1,11 @@
 pub mod services;
 
 #[cfg(feature = "desktop")]
+use serde_json::Value;
+#[cfg(feature = "desktop")]
 use services::{
     project::{self, DiscoveredProject, ProjectFile, RecentProject},
+    server::{LanguageFeature, ProofState, ServerManager, ServerStatus},
     toolchain::{self, InstallProgress, ToolchainManager, ToolchainStatus},
     ServiceError,
 };
@@ -106,10 +109,121 @@ fn cancel_toolchain_install(
 }
 
 #[cfg(feature = "desktop")]
+#[tauri::command]
+fn start_lean_server(
+    manager: tauri::State<'_, ServerManager>,
+    project_path: String,
+    required_toolchain: Option<String>,
+) -> Result<ServerStatus, ServiceError> {
+    manager.start(
+        PathBuf::from(project_path).as_path(),
+        required_toolchain.as_deref(),
+    )
+}
+
+#[cfg(feature = "desktop")]
+#[tauri::command]
+fn lean_server_status(
+    manager: tauri::State<'_, ServerManager>,
+    project_path: String,
+) -> Result<ServerStatus, ServiceError> {
+    manager.status(PathBuf::from(project_path).as_path())
+}
+
+#[cfg(feature = "desktop")]
+#[tauri::command]
+fn stop_lean_server(
+    manager: tauri::State<'_, ServerManager>,
+    project_path: String,
+) -> Result<(), ServiceError> {
+    manager.stop(PathBuf::from(project_path).as_path())
+}
+
+#[cfg(feature = "desktop")]
+#[tauri::command]
+fn sync_lean_document(
+    manager: tauri::State<'_, ServerManager>,
+    project_path: String,
+    relative_path: String,
+    content: String,
+    version: i64,
+) -> Result<i64, ServiceError> {
+    manager.sync_document(
+        PathBuf::from(project_path).as_path(),
+        PathBuf::from(relative_path).as_path(),
+        &content,
+        version,
+    )
+}
+
+#[cfg(feature = "desktop")]
+#[tauri::command]
+fn close_lean_document(
+    manager: tauri::State<'_, ServerManager>,
+    project_path: String,
+    relative_path: String,
+) -> Result<(), ServiceError> {
+    manager.close_document(
+        PathBuf::from(project_path).as_path(),
+        PathBuf::from(relative_path).as_path(),
+    )
+}
+
+#[cfg(feature = "desktop")]
+#[tauri::command]
+fn lean_diagnostics(
+    manager: tauri::State<'_, ServerManager>,
+    project_path: String,
+    relative_path: String,
+) -> Result<Vec<Value>, ServiceError> {
+    manager.diagnostics(
+        PathBuf::from(project_path).as_path(),
+        PathBuf::from(relative_path).as_path(),
+    )
+}
+
+#[cfg(feature = "desktop")]
+#[tauri::command]
+fn lean_language_request(
+    manager: tauri::State<'_, ServerManager>,
+    project_path: String,
+    relative_path: String,
+    feature: LanguageFeature,
+    line: u32,
+    character: u32,
+) -> Result<Value, ServiceError> {
+    manager.request_language_feature(
+        PathBuf::from(project_path).as_path(),
+        PathBuf::from(relative_path).as_path(),
+        feature,
+        line,
+        character,
+    )
+}
+
+#[cfg(feature = "desktop")]
+#[tauri::command]
+fn lean_proof_state(
+    manager: tauri::State<'_, ServerManager>,
+    project_path: String,
+    relative_path: String,
+    line: u32,
+    character: u32,
+) -> Result<ProofState, ServiceError> {
+    manager.proof_state(
+        PathBuf::from(project_path).as_path(),
+        PathBuf::from(relative_path).as_path(),
+        line,
+        character,
+    )
+}
+
+#[cfg(feature = "desktop")]
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
         .manage(ToolchainManager::default())
+        .manage(ServerManager::default())
         .plugin(tauri_plugin_dialog::init())
         .invoke_handler(tauri::generate_handler![
             discover_project,
@@ -119,7 +233,15 @@ pub fn run() {
             toolchain_status,
             install_toolchain,
             toolchain_install_progress,
-            cancel_toolchain_install
+            cancel_toolchain_install,
+            start_lean_server,
+            lean_server_status,
+            stop_lean_server,
+            sync_lean_document,
+            close_lean_document,
+            lean_diagnostics,
+            lean_language_request,
+            lean_proof_state
         ])
         .setup(|app| {
             if cfg!(debug_assertions) {

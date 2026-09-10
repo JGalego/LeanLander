@@ -1,5 +1,6 @@
 import { ChevronDown, Circle, Download, FileCode2, Folder, History, X } from 'lucide-react'
 import type { WorkspaceFile } from '../model/workspace'
+import type { ServerStatus } from '../services/languageClient'
 import type { RecentProject } from '../services/projectClient'
 import type { InstallProgress, ToolchainStatus } from '../services/toolchainClient'
 
@@ -14,6 +15,7 @@ interface ProjectSidebarProps {
   projectName: string
   projectPath: string
   recentProjects: RecentProject[]
+  serverStatus: ServerStatus
   toolchainStatus: ToolchainStatus
   onSelectFile: (fileId: string) => void
 }
@@ -29,6 +31,7 @@ export function ProjectSidebar({
   projectName,
   projectPath,
   recentProjects,
+  serverStatus,
   toolchainStatus,
   onSelectFile,
 }: ProjectSidebarProps) {
@@ -60,6 +63,13 @@ export function ProjectSidebar({
     : toolchainStatus.state === 'missing-elan' || toolchainStatus.state === 'error'
       ? ' status-dot--error'
       : ' status-dot--amber'
+  const serverTone = serverStatus.state === 'ready'
+    ? ' status-dot--ready'
+    : serverStatus.state === 'error'
+      ? ' status-dot--error'
+      : serverStatus.state === 'starting'
+        ? ' status-dot--amber'
+        : ''
 
   function renderFile(file: WorkspaceFile, nested = false) {
     return (
@@ -159,8 +169,13 @@ export function ProjectSidebar({
           <div className="environment-detail">{repair.description}</div>
         )}
         <div className="environment-row">
-          <Circle aria-hidden="true" className="status-dot" size={8} fill="currentColor" />
-          <span>Lean server offline</span>
+          <Circle
+            aria-hidden="true"
+            className={`status-dot${serverTone}`}
+            size={8}
+            fill="currentColor"
+          />
+          <span title={serverStatus.version ?? serverStatus.message}>{serverStatus.message}</span>
         </div>
       </div>
     </aside>

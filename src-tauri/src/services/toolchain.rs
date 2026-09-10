@@ -345,7 +345,7 @@ fn parse_active_toolchain(output: &str) -> Option<String> {
     None
 }
 
-fn validate_toolchain_name(toolchain: &str) -> ServiceResult<()> {
+pub(crate) fn validate_toolchain_name(toolchain: &str) -> ServiceResult<()> {
     let valid = !toolchain.is_empty()
         && toolchain.len() <= 200
         && toolchain.chars().all(|character| {

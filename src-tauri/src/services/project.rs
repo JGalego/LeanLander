@@ -210,7 +210,7 @@ pub fn remember_project(data_dir: &Path, project: &ProjectMetadata) -> ServiceRe
         .map_err(|error| ServiceError::io("save recent projects", &path, &error))
 }
 
-fn canonical_project_root(path: &Path) -> ServiceResult<PathBuf> {
+pub(crate) fn canonical_project_root(path: &Path) -> ServiceResult<PathBuf> {
     let canonical = path
         .canonicalize()
         .map_err(|error| ServiceError::io("open the project directory", path, &error))?;
@@ -312,7 +312,7 @@ fn read_source_file(path: &Path) -> ServiceResult<String> {
         .map_err(|error| ServiceError::io("read the Lean source file as UTF-8", path, &error))
 }
 
-fn resolve_project_file(
+pub(crate) fn resolve_project_file(
     project_path: &Path,
     relative_path: &Path,
 ) -> ServiceResult<(PathBuf, PathBuf)> {

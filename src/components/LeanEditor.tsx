@@ -1,8 +1,15 @@
+import { useEffect, useRef } from 'react'
 import Editor, { loader, type Monaco, type OnMount } from '@monaco-editor/react'
 import * as monaco from 'monaco-editor/esm/vs/editor/editor.api'
 import EditorWorker from 'monaco-editor/esm/vs/editor/editor.worker?worker'
 import { configureLeanLanguage } from '../editor/leanLanguage'
+import {
+  applyLeanDiagnostics,
+  registerLeanLanguageProviders,
+  type LeanLanguageContext,
+} from '../editor/leanLsp'
 import type { WorkspaceFile } from '../model/workspace'
+import type { LspDiagnostic } from '../services/languageClient'
 
 const workerScope = self as typeof self & {
   MonacoEnvironment: { getWorker: () => Worker }
@@ -15,17 +22,52 @@ workerScope.MonacoEnvironment = {
 loader.config({ monaco })
 
 interface LeanEditorProps {
+  diagnostics?: LspDiagnostic[]
   file: WorkspaceFile
+  languageContext?: LeanLanguageContext | null
   onChange: (content: string) => void
   onCursorChange: (lineNumber: number, column: number) => void
 }
 
-export function LeanEditor({ file, onChange, onCursorChange }: LeanEditorProps) {
+export function LeanEditor({
+  diagnostics = [],
+  file,
+  languageContext = null,
+  onChange,
+  onCursorChange,
+}: LeanEditorProps) {
+  const editorRef = useRef<monaco.editor.IStandaloneCodeEditor | null>(null)
+  const monacoRef = useRef<Monaco | null>(null)
+  const languageContextRef = useRef(languageContext)
+
+  useEffect(() => {
+    languageContextRef.current = languageContext
+  }, [languageContext])
+
+  useEffect(() => {
+    const model = editorRef.current?.getModel()
+    if (model && monacoRef.current) {
+      applyLeanDiagnostics(monacoRef.current, model, diagnostics)
+    }
+  }, [diagnostics, file.id])
+
   function handleBeforeMount(monacoInstance: Monaco) {
     configureLeanLanguage(monacoInstance)
   }
 
-  const handleMount: OnMount = (editor) => {
+  const handleMount: OnMount = (editor, monacoInstance) => {
+    editorRef.current = editor
+    monacoRef.current = monacoInstance
+    const providers = registerLeanLanguageProviders(
+      monacoInstance,
+      () => languageContextRef.current,
+    )
+    editor.onDidDispose(() => providers.dispose())
+    const model = editor.getModel()
+    if (model) {
+      applyLeanDiagnostics(monacoInstance, model, diagnostics)
+    }
+
     if (file.id === 'main') {
       editor.setPosition({ lineNumber: 8, column: 15 })
       onCursorChange(8, 15)
