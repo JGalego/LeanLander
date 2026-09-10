@@ -53,6 +53,7 @@ jobs:
     needs: verify
     runs-on: ${{ matrix.platform }}
     env:
+      APPLE_SIGNING_CONFIGURED: ${{ secrets['APPLE_CERTIFICATE'] != '' && secrets['APPLE_CERTIFICATE_PASSWORD'] != '' && secrets['APPLE_SIGNING_IDENTITY'] != '' && secrets['APPLE_ID'] != '' && secrets['APPLE_PASSWORD'] != '' && secrets['APPLE_TEAM_ID'] != '' }}
       WINDOWS_SIGNING_ARGS: ''
       WINDOWS_SIGNING_CONFIGURED: ${{ secrets['WINDOWS_CERTIFICATE'] != '' && secrets['WINDOWS_CERTIFICATE_PASSWORD'] != '' && secrets['WINDOWS_TIMESTAMP_URL'] != '' }}
     strategy:
@@ -150,15 +151,32 @@ jobs:
           } | ConvertTo-Json -Depth 4 | Set-Content $configPath
           "WINDOWS_SIGNING_ARGS=--config $configPath" >> $env:GITHUB_ENV
 
+      - name: Configure Apple signing
+        if: runner.os == 'macOS' && env.APPLE_SIGNING_CONFIGURED == 'true'
+        shell: bash
+        env:
+          SIGNING_APPLE_CERTIFICATE: ${{ secrets['APPLE_CERTIFICATE'] }}
+          SIGNING_APPLE_CERTIFICATE_PASSWORD: ${{ secrets['APPLE_CERTIFICATE_PASSWORD'] }}
+          SIGNING_APPLE_ID: ${{ secrets['APPLE_ID'] }}
+          SIGNING_APPLE_PASSWORD: ${{ secrets['APPLE_PASSWORD'] }}
+          SIGNING_APPLE_SIGNING_IDENTITY: ${{ secrets['APPLE_SIGNING_IDENTITY'] }}
+          SIGNING_APPLE_TEAM_ID: ${{ secrets['APPLE_TEAM_ID'] }}
+        run: |
+          printf 'APPLE_CERTIFICATE=%s\n' "${SIGNING_APPLE_CERTIFICATE}" >> "${GITHUB_ENV}"
+          printf 'APPLE_CERTIFICATE_PASSWORD=%s\n' "${SIGNING_APPLE_CERTIFICATE_PASSWORD}" >> "${GITHUB_ENV}"
+          printf 'APPLE_ID=%s\n' "${SIGNING_APPLE_ID}" >> "${GITHUB_ENV}"
+          printf 'APPLE_PASSWORD=%s\n' "${SIGNING_APPLE_PASSWORD}" >> "${GITHUB_ENV}"
+          printf 'APPLE_SIGNING_IDENTITY=%s\n' "${SIGNING_APPLE_SIGNING_IDENTITY}" >> "${GITHUB_ENV}"
+          printf 'APPLE_TEAM_ID=%s\n' "${SIGNING_APPLE_TEAM_ID}" >> "${GITHUB_ENV}"
+
+      - name: Configure macOS ad-hoc signing
+        if: runner.os == 'macOS' && env.APPLE_SIGNING_CONFIGURED != 'true'
+        shell: bash
+        run: printf 'APPLE_SIGNING_IDENTITY=-\n' >> "${GITHUB_ENV}"
+
       - name: Build and upload release bundles
         uses: tauri-apps/tauri-action@v1
         env:
-          APPLE_CERTIFICATE: ${{ secrets['APPLE_CERTIFICATE'] }}
-          APPLE_CERTIFICATE_PASSWORD: ${{ secrets['APPLE_CERTIFICATE_PASSWORD'] }}
-          APPLE_ID: ${{ secrets['APPLE_ID'] }}
-          APPLE_PASSWORD: ${{ secrets['APPLE_PASSWORD'] }}
-          APPLE_SIGNING_IDENTITY: ${{ startsWith(matrix.platform, 'macos-') && (secrets['APPLE_SIGNING_IDENTITY'] || '-') || '' }}
-          APPLE_TEAM_ID: ${{ secrets['APPLE_TEAM_ID'] }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           args: ${{ matrix.args }} ${{ env.WINDOWS_SIGNING_ARGS }}
